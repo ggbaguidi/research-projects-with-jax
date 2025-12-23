@@ -20,6 +20,26 @@ class ClassifierFns(Protocol):
     def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array: ...
 
 
+def _derf(
+        x: jax.Array,
+        *,
+        alpha: jax.Array,
+        s: jax.Array,
+        gamma: jax.Array,
+        beta: jax.Array,
+) -> jax.Array:
+        """Dynamic erf (Derf) point-wise function.
+
+        Based on arXiv:2512.10938v1, Eq. (10):
+            Derf(x) = gamma * erf(alpha * x + s) + beta
+
+        This is statistics-free and can be used as a normalization replacement or a
+        stable saturating activation.
+        """
+
+        return gamma * jax.lax.erf(alpha * x + s) + beta
+
+
 @dataclass(frozen=True)
 class MlpClassifierFns:
     hidden_sizes: tuple[int, ...] = (512, 256)
@@ -44,4 +64,61 @@ class MlpClassifierFns:
         for layer in params[:-1]:
             h = self.activation(jnp.dot(h, layer["w"]) + layer["b"])
         last = params[-1]
+        return jnp.dot(h, last["w"]) + last["b"]
+
+
+@dataclass(frozen=True)
+class DerfMlpClassifierFns:
+    """MLP classifier using Derf as a normalization-free activation.
+
+    This keeps the existing 'pure functions' interface while incorporating the
+    paper's learnable, point-wise Derf mapping. It is especially handy in
+    tabular settings where LayerNorm is often omitted but training stability and
+    generalization can still benefit from bounded, zero-centered transforms.
+    """
+
+    hidden_sizes: tuple[int, ...] = (256, 128)
+    param_scale: float = 1e-2
+    derf_alpha_init: float = 0.5
+    derf_s_init: float = 0.0
+
+    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
+        sizes = (input_dim, *self.hidden_sizes, num_classes)
+
+        def init_linear(m: int, n: int, k: jax.Array):
+            w_key, b_key = jax.random.split(k)
+            w = self.param_scale * jax.random.normal(w_key, (m, n))
+            b = self.param_scale * jax.random.normal(b_key, (n,))
+            return {"w": w, "b": b}
+
+        def init_derf(n: int):
+            # alpha and s are scalars in the paper; gamma/beta are per-channel.
+            alpha = jnp.asarray(self.derf_alpha_init, dtype=jnp.float32)
+            s = jnp.asarray(self.derf_s_init, dtype=jnp.float32)
+            gamma = jnp.ones((n,), dtype=jnp.float32)
+            beta = jnp.zeros((n,), dtype=jnp.float32)
+            return {"alpha": alpha, "s": s, "gamma": gamma, "beta": beta}
+
+        # One dict per layer. Hidden layers include both linear params and Derf params.
+        keys = jax.random.split(key, len(sizes) - 1)
+        layers: list[dict[str, Any]] = []
+        for (m, n), k in zip(zip(sizes[:-1], sizes[1:]), keys):
+            layers.append({"linear": init_linear(m, n, k)})
+
+        for i, n in enumerate(sizes[1:-1]):
+            layers[i]["derf"] = init_derf(n)
+
+        return layers
+
+    def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
+        h = x
+
+        # All but last are hidden layers
+        for layer in params[:-1]:
+            lin = layer["linear"]
+            z = jnp.dot(h, lin["w"]) + lin["b"]
+            d = layer["derf"]
+            h = _derf(z, alpha=d["alpha"], s=d["s"], gamma=d["gamma"], beta=d["beta"])
+
+        last = params[-1]["linear"] if isinstance(params[-1], dict) and "linear" in params[-1] else params[-1]
         return jnp.dot(h, last["w"]) + last["b"]
