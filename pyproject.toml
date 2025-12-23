@@ -15,6 +15,12 @@ optax = "^0.1.0"
 safetensors = "^0.4.0"
 tensorflow = "^2.20.0"
 matplotlib = "^3.10.6"
+inject = "^5.3.0"
+typer = {version = "^0.16.0", extras = ["all"]}
+rich = "^14.0.0"
+
+[tool.poetry.scripts]
+jaxdl = "jax_deep_learning.adapters.left.cli:app"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
