@@ -7,9 +7,9 @@ readme = "README.md"
 packages = [{include = "jax_deep_learning", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.13"
 jax = {extras = ["cuda12"], version = "^0.7.2"}
-jaxlib = "^0.7.0"
+jaxlib = "^0.7.2"
 tensorflow-datasets = "^4.9.0"
 optax = "^0.1.0"
 safetensors = "^0.4.0"
