@@ -9,3 +9,6 @@ __pycache__/
 .github/*.md
 data/*
 *.csv
+*.lock
+*.zip
+*.json*
