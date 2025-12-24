@@ -100,10 +100,20 @@ Both `train` and `kaggle-diabetes` support `--model-kind`:
 - `mlp`
 - `derf-mlp`
 
+For `kaggle-diabetes`, there is also a tabular-specific option:
+
+- `tabular-embed-mlp` (categorical embeddings instead of one-hot)
+
 Example:
 
 ```bash
 poetry run jaxdl train --dataset-kind tfds --tfds-name mnist --model-kind derf-mlp
+```
+
+For Kaggle diabetes (categorical embeddings):
+
+```bash
+poetry run jaxdl kaggle-diabetes --model-kind tabular-embed-mlp --embed-dim 8
 ```
 
 ## Kaggle: diabetes playground workflow
@@ -129,6 +139,8 @@ Useful flags:
 - `--max-train-rows N` / `--max-test-rows N`: fast local smoke runs.
 - `--log-path logs/kaggle_diabetes.jsonl`: JSONL logs (default is enabled).
 - `--zip/--no-zip`: optionally zip the submission file.
+- `--add-noise/--no-add-noise`: add Gaussian noise to numerics for data augmentation.
+- `--noise-std`: std dev of the noise (default 0.1).
 
 ## Logging (JSONL)
 
