@@ -27,12 +27,15 @@ warnings.filterwarnings(
 from jax_deep_learning.adapters.left.inject_config import configure_injections
 from jax_deep_learning.adapters.right.checkpoints_filesystem import FilesystemCheckpointStore
 from jax_deep_learning.adapters.right.data_loaders.npz_classification import NpzClassificationDatasetProvider
-from jax_deep_learning.adapters.right.data_loaders.tabular_csv_kaggle import TabularCsvBinaryClassificationDatasetProvider
+from jax_deep_learning.adapters.right.data_loaders.tabular_csv_kaggle import (
+    TabularCsvBinaryClassificationDatasetProvider,
+    TabularCsvConfig,
+)
 from jax_deep_learning.adapters.right.data_loaders.tfds_classification import TfdsClassificationDatasetProvider
 from jax_deep_learning.adapters.right.metrics_jsonl import CompositeMetricsSink, JsonlFileMetricsSink
 from jax_deep_learning.adapters.right.metrics_stdout import StdoutMetricsSink
 from jax_deep_learning.core.domain.commands.train import TrainCommand
-from jax_deep_learning.core.domain.entities.model import DerfMlpClassifierFns, MlpClassifierFns
+from jax_deep_learning.core.domain.entities.model import DerfMlpClassifierFns, MlpClassifierFns, TabularEmbedMlpClassifierFns
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
 
@@ -171,9 +174,10 @@ def kaggle_diabetes(
     adamw_eps_root: float = typer.Option(0.0, min=0.0, help="AdamW eps_root"),
     adamw_nesterov: bool = typer.Option(False, "--adamw-nesterov/--no-adamw-nesterov", help="Use Nesterov momentum in AdamW"),
     hidden: list[int] = typer.Option([2025, 128, 64], help="Repeatable hidden sizes: --hidden 256 --hidden 128"),
+    embed_dim: int = typer.Option(8, min=1, help="Embedding dim for tabular-embed-mlp"),
     model_kind: str = typer.Option(
         "derf-mlp",
-        help="Model to use: derf-mlp (default) | mlp",
+        help="Model to use: derf-mlp (default) | mlp | tabular-embed-mlp",
     ),
     seed: int = typer.Option(0),
     cpu: bool = typer.Option(True, "--cpu/--no-cpu", help="Force CPU (recommended on machines without CUDA libs)"),
@@ -188,6 +192,8 @@ def kaggle_diabetes(
         min=0,
         help="If >0, stop when valid AUC hasn't improved for N epochs (recommended)",
     ),
+    add_noise: bool = typer.Option(False, "--add-noise/--no-add-noise", help="Add Gaussian noise to numeric features for augmentation"),
+    noise_std: float = typer.Option(0.1, min=0.0, help="Std dev of noise for augmentation (if --add-noise)"),
     zip_output: bool = typer.Option(False, "--zip/--no-zip", help="If set, zip the output submission file"),
 ) -> None:
     """Train and generate a Kaggle submission for the diabetes playground dataset.
@@ -202,8 +208,13 @@ def kaggle_diabetes(
     if cpu and os.environ.get("JAX_PLATFORMS") != "cpu":
         typer.echo("Note: set JAX_PLATFORMS=cpu before running to force CPU.")
 
+    model_kind = model_kind.lower().strip()
+
     train_csv = os.path.join(data_dir, "train.csv")
     test_csv = os.path.join(data_dir, "test.csv")
+
+    # For embedding models, encode categoricals as indices.
+    tab_cfg = TabularCsvConfig(categorical_encoding=("index" if model_kind == "tabular-embed-mlp" else "onehot"))
 
     dataset = TabularCsvBinaryClassificationDatasetProvider(
         train_csv_path=train_csv,
@@ -212,6 +223,9 @@ def kaggle_diabetes(
         seed=seed,
         max_train_rows=(max_train_rows or None),
         max_test_rows=(max_test_rows or None),
+        config=tab_cfg,
+        add_noise=add_noise,
+        noise_std=noise_std,
     )
 
     out_path_p = Path(out_path)
@@ -223,13 +237,19 @@ def kaggle_diabetes(
         else stdout_metrics
     )
 
-    model_kind = model_kind.lower().strip()
     if model_kind == "mlp":
         model = MlpClassifierFns(hidden_sizes=tuple(hidden))
     elif model_kind in {"derf", "derf-mlp"}:
         model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden))
+    elif model_kind in {"tabular-embed-mlp", "embed-mlp"}:
+        model = TabularEmbedMlpClassifierFns(
+            n_numeric=dataset.numeric_dim,
+            categorical_cardinalities=dataset.categorical_cardinalities,
+            embed_dim=int(embed_dim),
+            hidden_sizes=tuple(hidden),
+        )
     else:
-        raise typer.BadParameter("model_kind must be one of: derf-mlp, mlp")
+        raise typer.BadParameter("model_kind must be one of: derf-mlp, mlp, tabular-embed-mlp")
 
     cmd = TrainCommand(
         epochs=epochs,
@@ -258,6 +278,7 @@ def kaggle_diabetes(
             "data_dir": data_dir,
             "dataset": dataset.describe(),
             "model_kind": model_kind,
+            "embed_dim": int(embed_dim),
             "epochs": epochs,
             "batch_size": batch_size,
             "lr": lr,
@@ -273,6 +294,8 @@ def kaggle_diabetes(
             "max_test_rows": max_test_rows,
             "out_path": str(out_path_p),
             "early_stopping_patience": early_stopping_patience,
+            "add_noise": bool(add_noise),
+            "noise_std": noise_std,
         },
     )
 
