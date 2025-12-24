@@ -71,6 +71,22 @@ jaxdl = "jax_deep_learning.adapters.left.cli:app"
 poetry run jaxdl train --dataset-kind tfds --tfds-name mnist --epochs 3 --batch-size 64
 ```
 
+### Optimizer tuning (AdamW)
+
+Both `train` and `kaggle-diabetes` expose common `optax.adamw(...)` hyperparameters:
+
+- `--lr` (learning rate)
+- `--weight-decay`
+- `--adamw-b1`, `--adamw-b2`
+- `--adamw-eps`, `--adamw-eps-root`
+- `--adamw-nesterov/--no-adamw-nesterov`
+
+Example:
+
+```bash
+poetry run jaxdl kaggle-diabetes --lr 3e-4 --weight-decay 1e-3 --adamw-b1 0.9 --adamw-b2 0.995
+```
+
 ### Train on an .npz dataset
 
 ```bash
