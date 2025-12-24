@@ -53,6 +53,11 @@ def train(
     batch_size: int = typer.Option(32, min=1),
     lr: float = typer.Option(1e-3),
     weight_decay: float = typer.Option(0.0),
+    adamw_b1: float = typer.Option(0.9, min=0.0, max=1.0, help="AdamW beta1"),
+    adamw_b2: float = typer.Option(0.999, min=0.0, max=1.0, help="AdamW beta2"),
+    adamw_eps: float = typer.Option(1e-8, min=0.0, help="AdamW eps"),
+    adamw_eps_root: float = typer.Option(0.0, min=0.0, help="AdamW eps_root"),
+    adamw_nesterov: bool = typer.Option(False, "--adamw-nesterov/--no-adamw-nesterov", help="Use Nesterov momentum in AdamW"),
     hidden: list[int] = typer.Option([512, 256], help="Repeatable hidden sizes: --hidden 512 --hidden 256"),
     model_kind: str = typer.Option(
         "mlp",
@@ -65,6 +70,11 @@ def train(
         help="If set, append metrics/events as JSONL to this path (e.g. logs/train.jsonl)",
     ),
     cpu: bool = typer.Option(True, "--cpu/--no-cpu", help="Force CPU (recommended on machines without CUDA libs)"),
+    early_stopping_patience: int = typer.Option(
+        0,
+        min=0,
+        help="If >0 and binary classification, stop when valid AUC hasn't improved for N epochs",
+    ),
 ) -> None:
     """Train a simple classifier using the core training use case."""
 
@@ -107,8 +117,14 @@ def train(
         seed=seed,
         learning_rate=lr,
         weight_decay=weight_decay,
+        adamw_b1=adamw_b1,
+        adamw_b2=adamw_b2,
+        adamw_eps=adamw_eps,
+        adamw_eps_root=adamw_eps_root,
+        adamw_nesterov=adamw_nesterov,
         hidden_sizes=tuple(hidden),
         log_every_steps=100,
+        early_stopping_patience=early_stopping_patience,
     )
 
     use_case = inject.instance(TrainClassifierUseCase)
@@ -124,7 +140,13 @@ def train(
             "batch_size": batch_size,
             "lr": lr,
             "weight_decay": weight_decay,
+            "adamw/b1": adamw_b1,
+            "adamw/b2": adamw_b2,
+            "adamw/eps": adamw_eps,
+            "adamw/eps_root": adamw_eps_root,
+            "adamw/nesterov": bool(adamw_nesterov),
             "seed": seed,
+            "early_stopping_patience": early_stopping_patience,
         },
     )
 
@@ -143,7 +165,12 @@ def kaggle_diabetes(
     batch_size: int = typer.Option(256, min=1),
     lr: float = typer.Option(1e-3),
     weight_decay: float = typer.Option(0.0),
-    hidden: list[int] = typer.Option([256, 128], help="Repeatable hidden sizes: --hidden 256 --hidden 128"),
+    adamw_b1: float = typer.Option(0.9, min=0.0, max=1.0, help="AdamW beta1"),
+    adamw_b2: float = typer.Option(0.999, min=0.0, max=1.0, help="AdamW beta2"),
+    adamw_eps: float = typer.Option(1e-8, min=0.0, help="AdamW eps"),
+    adamw_eps_root: float = typer.Option(0.0, min=0.0, help="AdamW eps_root"),
+    adamw_nesterov: bool = typer.Option(False, "--adamw-nesterov/--no-adamw-nesterov", help="Use Nesterov momentum in AdamW"),
+    hidden: list[int] = typer.Option([2025, 128, 64], help="Repeatable hidden sizes: --hidden 256 --hidden 128"),
     model_kind: str = typer.Option(
         "derf-mlp",
         help="Model to use: derf-mlp (default) | mlp",
@@ -155,6 +182,11 @@ def kaggle_diabetes(
     log_path: str = typer.Option(
         "logs/kaggle_diabetes.jsonl",
         help="Append metrics/events as JSONL to this file (set to '' to disable)",
+    ),
+    early_stopping_patience: int = typer.Option(
+        0,
+        min=0,
+        help="If >0, stop when valid AUC hasn't improved for N epochs (recommended)",
     ),
     zip_output: bool = typer.Option(False, "--zip/--no-zip", help="If set, zip the output submission file"),
 ) -> None:
@@ -205,8 +237,14 @@ def kaggle_diabetes(
         seed=seed,
         learning_rate=lr,
         weight_decay=weight_decay,
+        adamw_b1=adamw_b1,
+        adamw_b2=adamw_b2,
+        adamw_eps=adamw_eps,
+        adamw_eps_root=adamw_eps_root,
+        adamw_nesterov=adamw_nesterov,
         hidden_sizes=tuple(hidden),
         log_every_steps=50,
+        early_stopping_patience=early_stopping_patience,
     )
 
     configure_injections(dataset_provider=dataset, checkpoint_store=None, metrics_sink=metrics, model_fns=model)
@@ -218,16 +256,23 @@ def kaggle_diabetes(
             "event": "run_start",
             "command": "kaggle-diabetes",
             "data_dir": data_dir,
+            "dataset": dataset.describe(),
             "model_kind": model_kind,
             "epochs": epochs,
             "batch_size": batch_size,
             "lr": lr,
             "weight_decay": weight_decay,
+            "adamw/b1": adamw_b1,
+            "adamw/b2": adamw_b2,
+            "adamw/eps": adamw_eps,
+            "adamw/eps_root": adamw_eps_root,
+            "adamw/nesterov": bool(adamw_nesterov),
             "seed": seed,
             "valid_fraction": valid_fraction,
             "max_train_rows": max_train_rows,
             "max_test_rows": max_test_rows,
             "out_path": str(out_path_p),
+            "early_stopping_patience": early_stopping_patience,
         },
     )
 
