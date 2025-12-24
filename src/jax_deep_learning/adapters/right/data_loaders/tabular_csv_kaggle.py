@@ -18,6 +18,10 @@ class TabularCsvConfig:
     numeric_min_fraction: float = 0.95
     missing_tokens: tuple[str, ...] = ("", "na", "nan", "none", "null")
     categorical_missing_token: str = "__MISSING__"
+    # How to encode categoricals:
+    # - "onehot": append one-hot vectors per categorical column (current default)
+    # - "index": append one integer index per categorical column (for embedding models)
+    categorical_encoding: str = "onehot"
     enable_feature_engineering: bool = True
 
 
@@ -298,8 +302,13 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
         max_train_rows: int | None = None,
         max_test_rows: int | None = None,
         config: TabularCsvConfig | None = None,
+        add_noise: bool = False,
+        noise_std: float = 0.1,
     ) -> None:
         self._cfg = config or TabularCsvConfig()
+        self._add_noise = bool(add_noise)
+        self._noise_std = float(noise_std)
+        self._numeric_dim = 0
 
         train_rows = _read_csv_rows(train_csv_path)
         test_rows = _read_csv_rows(test_csv_path)
@@ -383,6 +392,9 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             "num_stds": num_stds,
         }
 
+        # Feature layout is: [standardized numeric cols..., one-hot categoricals...]
+        self._numeric_dim = int(len(numeric_cols))
+
         def encode_features(rows: list[dict[str, str]]) -> np.ndarray:
             feats: list[np.ndarray] = []
 
@@ -416,9 +428,14 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
                     ],
                     dtype=np.int32,
                 )
-                one_hot = np.zeros((len(rows), len(vocab)), dtype=np.float32)
-                one_hot[np.arange(len(rows)), idx] = 1.0
-                feats.append(one_hot)
+                enc = (self._cfg.categorical_encoding or "onehot").strip().lower()
+                if enc == "index":
+                    # One integer id per categorical column (stored as float32 for JAX-friendly batching).
+                    feats.append(idx.reshape(-1, 1).astype(np.float32))
+                else:
+                    one_hot = np.zeros((len(rows), len(vocab)), dtype=np.float32)
+                    one_hot[np.arange(len(rows)), idx] = 1.0
+                    feats.append(one_hot)
 
             if not feats:
                 raise ValueError("No features detected")
@@ -450,6 +467,24 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             test_size=int(self._x_test.shape[0]),
         )
 
+    @property
+    def numeric_dim(self) -> int:
+        return int(self._numeric_dim)
+
+    @property
+    def categorical_cols(self) -> tuple[str, ...]:
+        return tuple(self._schema.get("categorical_cols", []))
+
+    @property
+    def categorical_cardinalities(self) -> tuple[int, ...]:
+        cols = list(self._schema.get("categorical_cols", []))
+        vocab = self._schema.get("cat_vocab", {})
+        return tuple(int(len(vocab[c])) for c in cols)
+
+    @property
+    def categorical_encoding(self) -> str:
+        return str(self._cfg.categorical_encoding)
+
     def describe(self) -> dict[str, Any]:
         """Human/debug friendly summary (useful for CLI logging)."""
 
@@ -467,7 +502,9 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             "n_features": int(self._info.input_shape[0]),
             "n_numeric": int(len(self._schema["numeric_cols"])),
             "n_categorical": int(len(self._schema["categorical_cols"])),
+            "categorical_cols": list(self._schema["categorical_cols"]),
             "categorical_cardinalities": cat_card,
+            "categorical_encoding": str(self._cfg.categorical_encoding),
             "pos_rate_train": pos_rate_train,
             "pos_rate_valid": pos_rate_valid,
         }
@@ -497,7 +534,16 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
 
         for start in range(0, n, batch_size):
             sel = idx[start : start + batch_size]
-            yield Batch(x=x[sel], y=y[sel])
+            x_batch = x[sel]
+
+            # Optional augmentation: add Gaussian noise to *numeric* features only, on the training split.
+            # (Categoricals are one-hot and should not be noised; validation should remain clean.)
+            if self._add_noise and split == "train" and self._numeric_dim > 0 and self._noise_std > 0.0:
+                rng = np.random.default_rng(seed + start)  # Deterministic per batch
+                noise = rng.normal(0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)).astype(x_batch.dtype)
+                x_batch = x_batch.copy()
+                x_batch[:, : self._numeric_dim] = x_batch[:, : self._numeric_dim] + noise
+            yield Batch(x=x_batch, y=y[sel])
 
     def get_validation(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (ids_valid, x_valid, y_valid)."""
