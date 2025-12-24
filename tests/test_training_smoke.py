@@ -39,6 +39,18 @@ class _TinyDataset(DatasetProviderPort):
 
 def test_train_classifier_runs_one_epoch() -> None:
     use_case = TrainClassifierUseCase(dataset_provider=_TinyDataset())
-    result = use_case.run(TrainCommand(epochs=1, batch_size=16, learning_rate=1e-2))
+    result = use_case.run(
+        TrainCommand(
+            epochs=1,
+            batch_size=16,
+            learning_rate=1e-2,
+            weight_decay=1e-3,
+            adamw_b1=0.85,
+            adamw_b2=0.98,
+            adamw_eps=1e-7,
+            adamw_eps_root=0.0,
+            adamw_nesterov=True,
+        )
+    )
     assert result.history
     assert result.history[-1]["epoch"] == 1
