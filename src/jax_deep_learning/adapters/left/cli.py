@@ -25,33 +25,27 @@ warnings.filterwarnings(
 )
 
 from jax_deep_learning.adapters.left.inject_config import configure_injections
-from jax_deep_learning.adapters.right.checkpoints_filesystem import (
-    FilesystemCheckpointStore,
-)
+from jax_deep_learning.adapters.right.checkpoints_filesystem import \
+    FilesystemCheckpointStore
 from jax_deep_learning.adapters.right.data_loaders import (
     NpzClassificationDatasetProvider,
-    TabularCsvBinaryClassificationDatasetProvider,
-    TabularCsvConfig,
+    TabularCsvBinaryClassificationDatasetProvider, TabularCsvConfig,
     TabularCsvMulticlassClassificationDatasetProvider,
-    TfdsClassificationDatasetProvider,
-)
+    TfdsClassificationDatasetProvider)
 from jax_deep_learning.adapters.right.metrics_jsonl import (
-    CompositeMetricsSink,
-    JsonlFileMetricsSink,
-)
-from jax_deep_learning.adapters.right.metrics_plotting import plot_metrics_from_logs
+    CompositeMetricsSink, JsonlFileMetricsSink)
+from jax_deep_learning.adapters.right.metrics_plotting import \
+    plot_metrics_from_logs
 from jax_deep_learning.adapters.right.metrics_stdout import StdoutMetricsSink
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.model import (
-    DerfMlpClassifierFns,
-    MlpClassifierFns,
-    TabularEmbedMlpClassifierFns,
-)
+    DerfMlpClassifierFns, MlpClassifierFns, TabularEmbedMlpClassifierFns)
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
 from jax_deep_learning.core.ports.dataset_provider import DatasetProviderPort
 from jax_deep_learning.core.ports.metrics_sink import MetricsSinkPort
-from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
+from jax_deep_learning.core.use_cases.train_classifier import \
+    TrainClassifierUseCase
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
