@@ -24,11 +24,15 @@ class TfdsClassificationDatasetProvider(DatasetProviderPort):
         data_dir: str = "/tmp/tfds",
         image_normalize_0_1: bool = True,
     ) -> None:
-        data, info = tfds.load(name=name, data_dir=data_dir, as_supervised=True, with_info=True)
+        data, info = tfds.load(
+            name=name, data_dir=data_dir, as_supervised=True, with_info=True
+        )
         self._tf_train = data.get("train")
         self._tf_test = data.get("test") or data.get("validation")
         if self._tf_train is None or self._tf_test is None:
-            raise ValueError(f"TFDS dataset '{name}' must have train and test/validation splits")
+            raise ValueError(
+                f"TFDS dataset '{name}' must have train and test/validation splits"
+            )
 
         self._num_classes = int(info.features["label"].num_classes)
 
@@ -47,7 +51,9 @@ class TfdsClassificationDatasetProvider(DatasetProviderPort):
     def info(self) -> DatasetInfo:
         return self._info
 
-    def _pipeline(self, ds: tf.data.Dataset, *, batch_size: int, shuffle: bool, seed: int) -> tf.data.Dataset:
+    def _pipeline(
+        self, ds: tf.data.Dataset, *, batch_size: int, shuffle: bool, seed: int
+    ) -> tf.data.Dataset:
         ds = ds.map(self._preprocess, num_parallel_calls=tf.data.AUTOTUNE)
         if shuffle:
             ds = ds.shuffle(10_000, seed=seed, reshuffle_each_iteration=True)
@@ -63,5 +69,7 @@ class TfdsClassificationDatasetProvider(DatasetProviderPort):
         seed: int,
     ) -> Iterable[Batch]:
         ds = self._tf_train if split == "train" else self._tf_test
-        for x, y in tfds.as_numpy(self._pipeline(ds, batch_size=batch_size, shuffle=shuffle, seed=seed)):
+        for x, y in tfds.as_numpy(
+            self._pipeline(ds, batch_size=batch_size, shuffle=shuffle, seed=seed)
+        ):
             yield Batch(x=np.asarray(x), y=np.asarray(y))

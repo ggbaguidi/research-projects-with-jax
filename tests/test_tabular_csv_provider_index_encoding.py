@@ -40,7 +40,9 @@ def test_index_encoding_appends_cat_indices(tmp_path: Path) -> None:
     _write_csv(train_path, header, train_rows)
     _write_csv(test_path, test_header, test_rows)
 
-    cfg = TabularCsvConfig(enable_feature_engineering=False, categorical_encoding="index")
+    cfg = TabularCsvConfig(
+        enable_feature_engineering=False, categorical_encoding="index"
+    )
     ds = TabularCsvBinaryClassificationDatasetProvider(
         train_csv_path=str(train_path),
         test_csv_path=str(test_path),

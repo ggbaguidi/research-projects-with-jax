@@ -33,7 +33,9 @@ class NpzClassificationDatasetProvider(DatasetProviderPort):
             self._y_test = data["y_test"]
 
         num_classes = int(np.max(self._y_train)) + 1
-        self._info = DatasetInfo(num_classes=num_classes, input_shape=tuple(self._x_train.shape[1:]))
+        self._info = DatasetInfo(
+            num_classes=num_classes, input_shape=tuple(self._x_train.shape[1:])
+        )
 
     @property
     def info(self) -> DatasetInfo:

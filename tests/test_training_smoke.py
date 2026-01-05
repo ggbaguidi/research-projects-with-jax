@@ -28,7 +28,11 @@ class _TinyDataset(DatasetProviderPort):
         return self._info
 
     def iter_batches(self, *, split: str, batch_size: int, shuffle: bool, seed: int):
-        x, y = (self._x_train, self._y_train) if split == "train" else (self._x_test, self._y_test)
+        x, y = (
+            (self._x_train, self._y_train)
+            if split == "train"
+            else (self._x_test, self._y_test)
+        )
         idx = np.arange(len(x))
         if shuffle:
             np.random.default_rng(seed).shuffle(idx)

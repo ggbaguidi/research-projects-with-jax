@@ -15,29 +15,31 @@ class ClassifierFns(Protocol):
     Implementations must be JAX-compatible (jit/vmap friendly).
     """
 
-    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params: ...
+    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
+        ...
 
-    def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array: ...
+    def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
+        ...
 
 
 def _derf(
-        x: jax.Array,
-        *,
-        alpha: jax.Array,
-        s: jax.Array,
-        gamma: jax.Array,
-        beta: jax.Array,
+    x: jax.Array,
+    *,
+    alpha: jax.Array,
+    s: jax.Array,
+    gamma: jax.Array,
+    beta: jax.Array,
 ) -> jax.Array:
-        """Dynamic erf (Derf) point-wise function.
+    """Dynamic erf (Derf) point-wise function.
 
-        Based on arXiv:2512.10938v1, Eq. (10):
-            Derf(x) = gamma * erf(alpha * x + s) + beta
+    Based on arXiv:2512.10938v1, Eq. (10):
+        Derf(x) = gamma * erf(alpha * x + s) + beta
 
-        This is statistics-free and can be used as a normalization replacement or a
-        stable saturating activation.
-        """
+    This is statistics-free and can be used as a normalization replacement or a
+    stable saturating activation.
+    """
 
-        return gamma * jax.lax.erf(alpha * x + s) + beta
+    return gamma * jax.lax.erf(alpha * x + s) + beta
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,9 @@ class MlpClassifierFns:
             return {"w": w, "b": b}
 
         keys = jax.random.split(key, len(sizes) - 1)
-        return [init_layer(m, n, k) for (m, n), k in zip(zip(sizes[:-1], sizes[1:]), keys)]
+        return [
+            init_layer(m, n, k) for (m, n), k in zip(zip(sizes[:-1], sizes[1:]), keys)
+        ]
 
     def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
         # x: (batch, input_dim)
@@ -120,7 +124,11 @@ class DerfMlpClassifierFns:
             d = layer["derf"]
             h = _derf(z, alpha=d["alpha"], s=d["s"], gamma=d["gamma"], beta=d["beta"])
 
-        last = params[-1]["linear"] if isinstance(params[-1], dict) and "linear" in params[-1] else params[-1]
+        last = (
+            params[-1]["linear"]
+            if isinstance(params[-1], dict) and "linear" in params[-1]
+            else params[-1]
+        )
         return jnp.dot(h, last["w"]) + last["b"]
 
 
@@ -151,7 +159,9 @@ class TabularEmbedMlpClassifierFns:
 
         def init_embed(card: int, k: jax.Array) -> jax.Array:
             # Small random embedding table.
-            return self.param_scale * jax.random.normal(k, (int(card), int(self.embed_dim)))
+            return self.param_scale * jax.random.normal(
+                k, (int(card), int(self.embed_dim))
+            )
 
         def init_layer(m: int, n: int, k: jax.Array):
             w_key, b_key = jax.random.split(k)
@@ -163,7 +173,10 @@ class TabularEmbedMlpClassifierFns:
         k_emb, k_mlp = jax.random.split(key)
         if n_cat > 0:
             emb_keys = jax.random.split(k_emb, n_cat)
-            embeddings = [init_embed(card, kk) for card, kk in zip(self.categorical_cardinalities, emb_keys)]
+            embeddings = [
+                init_embed(card, kk)
+                for card, kk in zip(self.categorical_cardinalities, emb_keys)
+            ]
         else:
             embeddings = []
 

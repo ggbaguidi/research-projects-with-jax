@@ -17,8 +17,8 @@ def roc_auc_score_binary(y_true: np.ndarray, y_score: np.ndarray) -> float:
     y_true = np.asarray(y_true).astype(np.int32)
     y_score = np.asarray(y_score).astype(np.float64)
 
-    pos = (y_true == 1)
-    neg = (y_true == 0)
+    pos = y_true == 1
+    neg = y_true == 0
     n_pos = int(pos.sum())
     n_neg = int(neg.sum())
     if n_pos == 0 or n_neg == 0:

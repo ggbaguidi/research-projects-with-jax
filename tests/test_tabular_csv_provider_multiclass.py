@@ -28,9 +28,15 @@ def test_multiclass_provider_builds_label_mapping_and_ids(tmp_path: Path) -> Non
     # 3 classes, 3 examples each -> stratified holdout should keep all classes.
     train_rows: list[dict[str, str]] = []
     for i in range(3):
-        train_rows.append({"ID": f"ID_L{i}", "n0": str(1 + i), "cat": "A", "Target": "Low"})
-        train_rows.append({"ID": f"ID_M{i}", "n0": str(10 + i), "cat": "B", "Target": "Medium"})
-        train_rows.append({"ID": f"ID_H{i}", "n0": str(100 + i), "cat": "C", "Target": "High"})
+        train_rows.append(
+            {"ID": f"ID_L{i}", "n0": str(1 + i), "cat": "A", "Target": "Low"}
+        )
+        train_rows.append(
+            {"ID": f"ID_M{i}", "n0": str(10 + i), "cat": "B", "Target": "Medium"}
+        )
+        train_rows.append(
+            {"ID": f"ID_H{i}", "n0": str(100 + i), "cat": "C", "Target": "High"}
+        )
 
     _write_csv(train_path, fieldnames, train_rows)
 
@@ -41,7 +47,9 @@ def test_multiclass_provider_builds_label_mapping_and_ids(tmp_path: Path) -> Non
     ]
     _write_csv(test_path, test_fieldnames, test_rows)
 
-    cfg = TabularCsvConfig(id_column="ID", target_column="Target", enable_feature_engineering=False)
+    cfg = TabularCsvConfig(
+        id_column="ID", target_column="Target", enable_feature_engineering=False
+    )
 
     ds = TabularCsvMulticlassClassificationDatasetProvider(
         train_csv_path=str(train_path),

@@ -23,7 +23,11 @@ class _TinyBinaryDataset(DatasetProviderPort):
         return self._info
 
     def iter_batches(self, *, split: str, batch_size: int, shuffle: bool, seed: int):
-        x, y = (self._x_train, self._y_train) if split == "train" else (self._x_valid, self._y_valid)
+        x, y = (
+            (self._x_train, self._y_train)
+            if split == "train"
+            else (self._x_valid, self._y_valid)
+        )
         idx = np.arange(len(x))
         if shuffle:
             np.random.default_rng(seed).shuffle(idx)
@@ -36,7 +40,9 @@ def test_early_stopping_triggers_when_no_learning() -> None:
     # With lr=0, params won't change, so AUC should not improve across epochs.
     # With patience=1, training should stop after the second epoch.
     use_case = TrainClassifierUseCase(dataset_provider=_TinyBinaryDataset())
-    cmd = TrainCommand(epochs=10, batch_size=16, learning_rate=0.0, early_stopping_patience=1)
+    cmd = TrainCommand(
+        epochs=10, batch_size=16, learning_rate=0.0, early_stopping_patience=1
+    )
     result = use_case.run(cmd)
 
     assert len(result.history) == 2

@@ -10,7 +10,11 @@ import optax
 
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.base import Batch, StepMetrics
-from jax_deep_learning.core.domain.entities.model import ClassifierFns, MlpClassifierFns, Params
+from jax_deep_learning.core.domain.entities.model import (
+    ClassifierFns,
+    MlpClassifierFns,
+    Params,
+)
 from jax_deep_learning.core.domain.errors.training import TrainingError
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
@@ -50,7 +54,9 @@ class TrainClassifierUseCase:
             input_dim *= d
 
         key = jax.random.PRNGKey(command.seed)
-        params = self._model.init(key=key, input_dim=input_dim, num_classes=info.num_classes)
+        params = self._model.init(
+            key=key, input_dim=input_dim, num_classes=info.num_classes
+        )
 
         optimizer = optax.adamw(
             learning_rate=command.learning_rate,
@@ -119,7 +125,10 @@ class TrainClassifierUseCase:
 
                 if self._metrics and (global_step % command.log_every_steps == 0):
                     m = loss_and_metrics(params, batch)
-                    self._metrics.log(step=global_step, metrics={"train/loss": m.loss, "train/acc": m.accuracy})
+                    self._metrics.log(
+                        step=global_step,
+                        metrics={"train/loss": m.loss, "train/acc": m.accuracy},
+                    )
 
             # Eval (optional)
             eval_losses = []
@@ -153,7 +162,9 @@ class TrainClassifierUseCase:
                 )
 
                 if not (eval_auc != eval_auc):  # not NaN
-                    if best_auc is None or eval_auc > (best_auc + auc_improvement_epsilon):
+                    if best_auc is None or eval_auc > (
+                        best_auc + auc_improvement_epsilon
+                    ):
                         best_auc = float(eval_auc)
                         best_epoch = int(epoch)
                         best_params = params
@@ -163,8 +174,12 @@ class TrainClassifierUseCase:
 
             epoch_summary = {
                 "epoch": epoch,
-                "test/loss": float(sum(eval_losses) / max(1, len(eval_losses))) if eval_losses else None,
-                "test/acc": float(sum(eval_accs) / max(1, len(eval_accs))) if eval_accs else None,
+                "test/loss": float(sum(eval_losses) / max(1, len(eval_losses)))
+                if eval_losses
+                else None,
+                "test/acc": float(sum(eval_accs) / max(1, len(eval_accs)))
+                if eval_accs
+                else None,
                 "test/auc": float(eval_auc) if eval_auc is not None else None,
                 "best/auc": best_auc,
                 "best/epoch": best_epoch,
@@ -175,7 +190,11 @@ class TrainClassifierUseCase:
                 self._metrics.log(step=global_step, metrics=epoch_summary)
 
             if self._ckpt:
-                self._ckpt.save(step=global_step, state={"params": params, "opt_state": opt_state}, metadata=epoch_summary)
+                self._ckpt.save(
+                    step=global_step,
+                    state={"params": params, "opt_state": opt_state},
+                    metadata=epoch_summary,
+                )
 
             # Early stopping: only meaningful for binary tasks where AUC is computed.
             if is_binary and command.early_stopping_patience and best_auc is not None:
@@ -194,5 +213,7 @@ class TrainClassifierUseCase:
                     break
 
         # Prefer the best params by validation AUC if available.
-        final_params = best_params if (is_binary and best_params is not None) else params
+        final_params = (
+            best_params if (is_binary and best_params is not None) else params
+        )
         return TrainResult(params=final_params, history=history)

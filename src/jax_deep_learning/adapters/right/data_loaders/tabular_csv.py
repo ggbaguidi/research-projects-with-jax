@@ -58,7 +58,9 @@ def _format_int_for_csv(x: int) -> str:
     return "1" if int(x) != 0 else "0"
 
 
-def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvConfig) -> None:
+def _apply_feature_engineering(
+    rows: list[dict[str, str]], *, cfg: TabularCsvConfig
+) -> None:
     """In-place feature engineering (pandas-free).
 
     Mirrors the user's provided feature engineering function, but operates on
@@ -80,7 +82,9 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
     add_age = has_cols("age")
     add_central_obesity = has_cols("gender", "waist_to_hip_ratio")
     add_bmi_whr = has_cols("bmi", "waist_to_hip_ratio")
-    add_sleep_screen_stress = has_cols("sleep_hours_per_day", "screen_time_hours_per_day")
+    add_sleep_screen_stress = has_cols(
+        "sleep_hours_per_day", "screen_time_hours_per_day"
+    )
     add_alcohol = has_cols("alcohol_consumption_per_week")
     add_low_activity = has_cols("physical_activity_minutes_per_week")
     add_hypertension = has_cols("systolic_bp", "diastolic_bp")
@@ -90,8 +94,12 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
     add_high_hr = has_cols("heart_rate")
     add_low_ses = has_cols("education_level", "income_level")
     add_genetic_lifestyle = has_cols("family_history_diabetes", "bmi")
-    add_comorbidity = has_cols("hypertension_history", "cardiovascular_history", "family_history_diabetes")
-    add_silent_diabetic = has_cols("bmi", "physical_activity_minutes_per_week", "triglycerides")
+    add_comorbidity = has_cols(
+        "hypertension_history", "cardiovascular_history", "family_history_diabetes"
+    )
+    add_silent_diabetic = has_cols(
+        "bmi", "physical_activity_minutes_per_week", "triglycerides"
+    )
 
     for r in rows:
         # Age_40+, Age_55+
@@ -106,9 +114,8 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
             gender = (r.get("gender", "") or "").strip()
             whr = _to_float_or_nan(r.get("waist_to_hip_ratio", ""), cfg=cfg)
             if gender and whr == whr:
-                central = (
-                    (gender.lower() == "male" and whr > 0.9)
-                    or (gender.lower() == "female" and whr > 0.85)
+                central = (gender.lower() == "male" and whr > 0.9) or (
+                    gender.lower() == "female" and whr > 0.85
                 )
                 r["Central_Obesity"] = _format_int_for_csv(int(central))
 
@@ -124,7 +131,9 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
             sleep_h = _to_float_or_nan(r.get("sleep_hours_per_day", ""), cfg=cfg)
             screen_h = _to_float_or_nan(r.get("screen_time_hours_per_day", ""), cfg=cfg)
             if sleep_h == sleep_h and screen_h == screen_h:
-                r["Sleep_Screen_Stress"] = _format_int_for_csv(int((sleep_h < 6) and (screen_h > 6)))
+                r["Sleep_Screen_Stress"] = _format_int_for_csv(
+                    int((sleep_h < 6) and (screen_h > 6))
+                )
 
         # Alcohol_High, Alcohol_Zero
         if add_alcohol:
@@ -135,7 +144,9 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
 
         # Low_Activity
         if add_low_activity:
-            act = _to_float_or_nan(r.get("physical_activity_minutes_per_week", ""), cfg=cfg)
+            act = _to_float_or_nan(
+                r.get("physical_activity_minutes_per_week", ""), cfg=cfg
+            )
             if act == act:
                 r["Low_Activity"] = _format_int_for_csv(int(act < 150))
 
@@ -144,7 +155,9 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
             sys_bp = _to_float_or_nan(r.get("systolic_bp", ""), cfg=cfg)
             dia_bp = _to_float_or_nan(r.get("diastolic_bp", ""), cfg=cfg)
             if sys_bp == sys_bp and dia_bp == dia_bp:
-                r["Hypertension"] = _format_int_for_csv(int((sys_bp >= 130) or (dia_bp >= 80)))
+                r["Hypertension"] = _format_int_for_csv(
+                    int((sys_bp >= 130) or (dia_bp >= 80))
+                )
 
         # BP_Load
         if add_bp_load:
@@ -186,7 +199,9 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
             fam = _to_float_or_nan(r.get("family_history_diabetes", ""), cfg=cfg)
             bmi = _to_float_or_nan(r.get("bmi", ""), cfg=cfg)
             if fam == fam and bmi == bmi:
-                r["Genetic_Lifestyle_Risk"] = _format_float_for_csv(fam * float(bmi > 30))
+                r["Genetic_Lifestyle_Risk"] = _format_float_for_csv(
+                    fam * float(bmi > 30)
+                )
 
         # Comorbidity_Count
         if add_comorbidity:
@@ -199,12 +214,13 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
         # Silent_Diabetic
         if add_silent_diabetic:
             bmi = _to_float_or_nan(r.get("bmi", ""), cfg=cfg)
-            act = _to_float_or_nan(r.get("physical_activity_minutes_per_week", ""), cfg=cfg)
+            act = _to_float_or_nan(
+                r.get("physical_activity_minutes_per_week", ""), cfg=cfg
+            )
             tg = _to_float_or_nan(r.get("triglycerides", ""), cfg=cfg)
             if bmi == bmi and act == act and tg == tg:
                 silent = (bmi < 25) and (act > 150) and (tg > 150)
                 r["Silent_Diabetic"] = _format_int_for_csv(int(silent))
-
 
 
 def _stratified_split_binary(
@@ -326,7 +342,9 @@ def _stratified_split_multiclass(
 
     # Increase if we undershot.
     if total_valid() < n_valid_total:
-        count_by_class = {int(c): int(cnt) for c, cnt in zip(classes.tolist(), counts.tolist())}
+        count_by_class = {
+            int(c): int(cnt) for c, cnt in zip(classes.tolist(), counts.tolist())
+        }
         while total_valid() < n_valid_total:
             # Add to the class with most remaining capacity.
             c_best = None
@@ -405,9 +423,9 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             _apply_feature_engineering(test_rows, cfg=self._cfg)
 
         if max_train_rows is not None:
-            train_rows = train_rows[: max_train_rows]
+            train_rows = train_rows[:max_train_rows]
         if max_test_rows is not None:
-            test_rows = test_rows[: max_test_rows]
+            test_rows = test_rows[:max_test_rows]
 
         if not train_rows:
             raise ValueError(f"No rows found in {train_csv_path}")
@@ -421,7 +439,11 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
         if self._cfg.target_column not in all_cols:
             raise ValueError(f"Missing target column '{self._cfg.target_column}'")
 
-        feature_cols = [c for c in all_cols if c not in (self._cfg.id_column, self._cfg.target_column)]
+        feature_cols = [
+            c
+            for c in all_cols
+            if c not in (self._cfg.id_column, self._cfg.target_column)
+        ]
 
         # Infer numeric vs categorical based on train rows
         numeric_cols: list[str] = []
@@ -447,10 +469,18 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             vals = []
             for r in train_rows:
                 v = r.get(c, "")
-                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+                vals.append(
+                    self._cfg.categorical_missing_token
+                    if _is_missing(v, cfg=self._cfg)
+                    else v
+                )
             for r in test_rows:
                 v = r.get(c, "")
-                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+                vals.append(
+                    self._cfg.categorical_missing_token
+                    if _is_missing(v, cfg=self._cfg)
+                    else v
+                )
             uniq = sorted(set(vals))
             cat_vocab[c] = {v: i for i, v in enumerate(uniq)}
 
@@ -458,7 +488,10 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
         num_means: dict[str, float] = {}
         num_stds: dict[str, float] = {}
         for c in numeric_cols:
-            arr = np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in train_rows], dtype=np.float32)
+            arr = np.asarray(
+                [_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in train_rows],
+                dtype=np.float32,
+            )
             mu = float(np.nanmean(arr))
             std = float(np.nanstd(arr))
             if np.isnan(mu):
@@ -490,7 +523,13 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
                     [
                         (
                             np.nan_to_num(
-                                np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in rows], dtype=np.float32),
+                                np.asarray(
+                                    [
+                                        _to_float_or_nan(r.get(c, ""), cfg=self._cfg)
+                                        for r in rows
+                                    ],
+                                    dtype=np.float32,
+                                ),
                                 nan=num_means[c],
                             )
                             - num_means[c]
@@ -529,12 +568,18 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
             return np.concatenate(feats, axis=1).astype(np.float32)
 
         # Encode train (with labels)
-        ids_train = np.asarray([int(r[self._cfg.id_column]) for r in train_rows], dtype=np.int64)
-        y_all = np.asarray([int(float(r[self._cfg.target_column])) for r in train_rows], dtype=np.int32)
+        ids_train = np.asarray(
+            [int(r[self._cfg.id_column]) for r in train_rows], dtype=np.int64
+        )
+        y_all = np.asarray(
+            [int(float(r[self._cfg.target_column])) for r in train_rows], dtype=np.int32
+        )
         x_all = encode_features(train_rows)
 
         # Split train/valid (stratified)
-        train_idx, valid_idx = _stratified_split_binary(y=y_all, valid_fraction=valid_fraction, seed=seed)
+        train_idx, valid_idx = _stratified_split_binary(
+            y=y_all, valid_fraction=valid_fraction, seed=seed
+        )
 
         self._x_train = x_all[train_idx]
         self._y_train = y_all[train_idx]
@@ -543,7 +588,9 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
         self._ids_valid = ids_train[valid_idx]
 
         # Encode Kaggle test (no labels)
-        self._ids_test = np.asarray([int(r[self._cfg.id_column]) for r in test_rows], dtype=np.int64)
+        self._ids_test = np.asarray(
+            [int(r[self._cfg.id_column]) for r in test_rows], dtype=np.int64
+        )
         self._x_test = encode_features(test_rows)
 
         self._info = DatasetInfo(
@@ -580,7 +627,10 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
         pos_rate_train = float(ytr.mean()) if ytr.size else float("nan")
         pos_rate_valid = float(yva.mean()) if yva.size else float("nan")
 
-        cat_card = {c: int(len(self._schema["cat_vocab"][c])) for c in self._schema["categorical_cols"]}
+        cat_card = {
+            c: int(len(self._schema["cat_vocab"][c]))
+            for c in self._schema["categorical_cols"]
+        }
 
         return {
             "train_size": int(self._info.train_size),
@@ -625,11 +675,20 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
 
             # Optional augmentation: add Gaussian noise to *numeric* features only, on the training split.
             # (Categoricals are one-hot and should not be noised; validation should remain clean.)
-            if self._add_noise and split == "train" and self._numeric_dim > 0 and self._noise_std > 0.0:
+            if (
+                self._add_noise
+                and split == "train"
+                and self._numeric_dim > 0
+                and self._noise_std > 0.0
+            ):
                 rng = np.random.default_rng(seed + start)  # Deterministic per batch
-                noise = rng.normal(0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)).astype(x_batch.dtype)
+                noise = rng.normal(
+                    0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)
+                ).astype(x_batch.dtype)
                 x_batch = x_batch.copy()
-                x_batch[:, : self._numeric_dim] = x_batch[:, : self._numeric_dim] + noise
+                x_batch[:, : self._numeric_dim] = (
+                    x_batch[:, : self._numeric_dim] + noise
+                )
             yield Batch(x=x_batch, y=y[sel])
 
     def get_validation(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -687,9 +746,9 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             _apply_feature_engineering(test_rows, cfg=self._cfg)
 
         if max_train_rows is not None:
-            train_rows = train_rows[: max_train_rows]
+            train_rows = train_rows[:max_train_rows]
         if max_test_rows is not None:
-            test_rows = test_rows[: max_test_rows]
+            test_rows = test_rows[:max_test_rows]
 
         if not train_rows:
             raise ValueError(f"No rows found in {train_csv_path}")
@@ -702,7 +761,11 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
         if self._cfg.target_column not in all_cols:
             raise ValueError(f"Missing target column '{self._cfg.target_column}'")
 
-        feature_cols = [c for c in all_cols if c not in (self._cfg.id_column, self._cfg.target_column)]
+        feature_cols = [
+            c
+            for c in all_cols
+            if c not in (self._cfg.id_column, self._cfg.target_column)
+        ]
 
         # Infer numeric vs categorical based on train rows
         numeric_cols: list[str] = []
@@ -727,10 +790,18 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             vals: list[str] = []
             for r in train_rows:
                 v = r.get(c, "")
-                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+                vals.append(
+                    self._cfg.categorical_missing_token
+                    if _is_missing(v, cfg=self._cfg)
+                    else v
+                )
             for r in test_rows:
                 v = r.get(c, "")
-                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+                vals.append(
+                    self._cfg.categorical_missing_token
+                    if _is_missing(v, cfg=self._cfg)
+                    else v
+                )
             uniq = sorted(set(vals))
             cat_vocab[c] = {v: i for i, v in enumerate(uniq)}
 
@@ -738,7 +809,10 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
         num_means: dict[str, float] = {}
         num_stds: dict[str, float] = {}
         for c in numeric_cols:
-            arr = np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in train_rows], dtype=np.float32)
+            arr = np.asarray(
+                [_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in train_rows],
+                dtype=np.float32,
+            )
             mu = float(np.nanmean(arr))
             std = float(np.nanstd(arr))
             if np.isnan(mu):
@@ -767,7 +841,13 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
                     [
                         (
                             np.nan_to_num(
-                                np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in rows], dtype=np.float32),
+                                np.asarray(
+                                    [
+                                        _to_float_or_nan(r.get(c, ""), cfg=self._cfg)
+                                        for r in rows
+                                    ],
+                                    dtype=np.float32,
+                                ),
                                 nan=num_means[c],
                             )
                             - num_means[c]
@@ -805,7 +885,9 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             return np.concatenate(feats, axis=1).astype(np.float32)
 
         # IDs (kept as strings to support non-numeric IDs like 'ID_XXXX')
-        ids_train = np.asarray([str(r[self._cfg.id_column]) for r in train_rows], dtype=object)
+        ids_train = np.asarray(
+            [str(r[self._cfg.id_column]) for r in train_rows], dtype=object
+        )
 
         # Targets: build label mapping
         y_raw = [str(r.get(self._cfg.target_column, "")).strip() for r in train_rows]
@@ -828,7 +910,9 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
 
         x_all = encode_features(train_rows)
 
-        train_idx, valid_idx = _stratified_split_multiclass(y=y_all, valid_fraction=valid_fraction, seed=seed)
+        train_idx, valid_idx = _stratified_split_multiclass(
+            y=y_all, valid_fraction=valid_fraction, seed=seed
+        )
 
         self._x_train = x_all[train_idx]
         self._y_train = y_all[train_idx]
@@ -836,7 +920,9 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
         self._y_valid = y_all[valid_idx]
         self._ids_valid = ids_train[valid_idx]
 
-        self._ids_test = np.asarray([str(r[self._cfg.id_column]) for r in test_rows], dtype=object)
+        self._ids_test = np.asarray(
+            [str(r[self._cfg.id_column]) for r in test_rows], dtype=object
+        )
         self._x_test = encode_features(test_rows)
 
         self._info = DatasetInfo(
@@ -868,7 +954,10 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
     def describe(self) -> dict[str, Any]:
         ytr = np.asarray(self._y_train)
         yva = np.asarray(self._y_valid)
-        cat_card = {c: int(len(self._schema["cat_vocab"][c])) for c in self._schema["categorical_cols"]}
+        cat_card = {
+            c: int(len(self._schema["cat_vocab"][c]))
+            for c in self._schema["categorical_cols"]
+        }
 
         def dist(y: np.ndarray) -> dict[str, int]:
             out: dict[str, int] = {name: 0 for name in self._class_names}
@@ -919,11 +1008,20 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             sel = idx[start : start + batch_size]
             x_batch = x[sel]
 
-            if self._add_noise and split == "train" and self._numeric_dim > 0 and self._noise_std > 0.0:
+            if (
+                self._add_noise
+                and split == "train"
+                and self._numeric_dim > 0
+                and self._noise_std > 0.0
+            ):
                 rng = np.random.default_rng(seed + start)
-                noise = rng.normal(0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)).astype(x_batch.dtype)
+                noise = rng.normal(
+                    0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)
+                ).astype(x_batch.dtype)
                 x_batch = x_batch.copy()
-                x_batch[:, : self._numeric_dim] = x_batch[:, : self._numeric_dim] + noise
+                x_batch[:, : self._numeric_dim] = (
+                    x_batch[:, : self._numeric_dim] + noise
+                )
 
             yield Batch(x=x_batch, y=y[sel])
 

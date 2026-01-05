@@ -45,7 +45,11 @@ class _TinyTabularEmbedDataset(DatasetProviderPort):
         return self._info
 
     def iter_batches(self, *, split: str, batch_size: int, shuffle: bool, seed: int):
-        x, y = (self._x_train, self._y_train) if split == "train" else (self._x_test, self._y_test)
+        x, y = (
+            (self._x_train, self._y_train)
+            if split == "train"
+            else (self._x_test, self._y_test)
+        )
         idx = np.arange(len(x))
         if shuffle:
             np.random.default_rng(seed).shuffle(idx)
@@ -56,7 +60,9 @@ class _TinyTabularEmbedDataset(DatasetProviderPort):
 
 def test_train_classifier_runs_with_tabular_embeddings() -> None:
     ds = _TinyTabularEmbedDataset()
-    model = TabularEmbedMlpClassifierFns(n_numeric=3, categorical_cardinalities=(4, 7), embed_dim=4, hidden_sizes=(16,))
+    model = TabularEmbedMlpClassifierFns(
+        n_numeric=3, categorical_cardinalities=(4, 7), embed_dim=4, hidden_sizes=(16,)
+    )
     use_case = TrainClassifierUseCase(dataset_provider=ds, model_fns=model)
 
     result = use_case.run(TrainCommand(epochs=1, batch_size=32, learning_rate=1e-2))

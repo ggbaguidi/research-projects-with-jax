@@ -20,7 +20,9 @@ class FilesystemCheckpointStore(CheckpointStorePort):
         self._dir = dir_path
         os.makedirs(self._dir, exist_ok=True)
 
-    def save(self, *, step: int, state: Any, metadata: dict[str, Any] | None = None) -> None:
+    def save(
+        self, *, step: int, state: Any, metadata: dict[str, Any] | None = None
+    ) -> None:
         params = state.get("params") if isinstance(state, dict) else None
         if params is None:
             raise ValueError("state must be a dict containing 'params'")
