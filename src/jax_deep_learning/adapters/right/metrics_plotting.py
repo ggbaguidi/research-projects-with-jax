@@ -145,6 +145,8 @@ def default_metric_selection(series_by_name: dict[str, MetricSeries]) -> list[st
         "train/auc",
         "test/auc",
         "valid/auc",
+        "train/param_norm",
+        "train/grad_norm",
     ]
 
     selected = [m for m in preferred if m in series_by_name]
