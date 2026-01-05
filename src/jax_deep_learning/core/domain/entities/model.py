@@ -175,10 +175,13 @@ class TabularEmbedMlpClassifierFns:
             for (m, n), kk in zip(zip(sizes[:-1], sizes[1:]), layer_keys)
         ]
 
-        return {"embeddings": embeddings, "mlp": mlp_layers, "n_numeric": int(self.n_numeric)}
+        # NOTE: Keep params as real-valued JAX arrays only.
+        # Putting Python/NumPy ints into the params pytree can make `jax.grad` fail
+        # (it tries to take gradients w.r.t. integer leaves).
+        return {"embeddings": embeddings, "mlp": mlp_layers}
 
     def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
-        n_numeric = int(params.get("n_numeric", self.n_numeric))
+        n_numeric = int(self.n_numeric)
         n_cat = len(params.get("embeddings", []))
 
         x_num = x[:, :n_numeric]
