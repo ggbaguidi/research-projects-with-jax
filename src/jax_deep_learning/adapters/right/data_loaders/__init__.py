@@ -1,9 +1,7 @@
 from .npz_classification import NpzClassificationDatasetProvider
+from .tabular_csv import (TabularCsvBinaryClassificationDatasetProvider,
+                          TabularCsvMulticlassClassificationDatasetProvider)
 from .tfds_classification import TfdsClassificationDatasetProvider
-from .tabular_csv import (
-    TabularCsvBinaryClassificationDatasetProvider,
-    TabularCsvMulticlassClassificationDatasetProvider,
-)
 
 __all__ = [
     "NpzClassificationDatasetProvider",

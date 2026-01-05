@@ -8,7 +8,8 @@ from jax_deep_learning.core.domain.entities.model import ClassifierFns
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
 from jax_deep_learning.core.ports.dataset_provider import DatasetProviderPort
 from jax_deep_learning.core.ports.metrics_sink import MetricsSinkPort
-from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
+from jax_deep_learning.core.use_cases.train_classifier import \
+    TrainClassifierUseCase
 
 
 # pylint: disable=invalid-name
