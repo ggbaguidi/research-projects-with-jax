@@ -199,6 +199,8 @@ def plot_metrics_from_logs(
 
     if not show:
         matplotlib.use("Agg", force=True)
+    else:
+        matplotlib.use("Qt5Agg", force=True)
 
     import matplotlib.pyplot as plt  # pylint: disable=import-error
 

@@ -12,3 +12,4 @@ data/*
 *.lock
 *.zip
 *.json*
+*.png
