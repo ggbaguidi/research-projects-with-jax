@@ -161,7 +161,7 @@ def train(
 
 @app.command(name="kaggle-diabetes")
 def kaggle_diabetes(
-    data_dir: str = typer.Option("data", help="Folder containing train.csv and test.csv"),
+    data_dir: str = typer.Option("data/s5e12", help="Folder containing train.csv and test.csv"),
     out_path: str = typer.Option("submission.csv", help="Where to write the submission file"),
     valid_fraction: float = typer.Option(0.2, min=0.01, max=0.5, help="Holdout fraction from train.csv"),
     epochs: int = typer.Option(10, min=1),
@@ -199,8 +199,8 @@ def kaggle_diabetes(
     """Train and generate a Kaggle submission for the diabetes playground dataset.
 
     Expects:
-      - data/train.csv with target column 'diagnosed_diabetes'
-      - data/test.csv without the target
+      - data/s5e12/train.csv with target column 'diagnosed_diabetes'
+      - data/s5e12/test.csv without the target
     Writes:
       - submission.csv with columns: id,diagnosed_diabetes
     """
