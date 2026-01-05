@@ -837,6 +837,7 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
         self,
         *,
         train_csv_path: str,
+        valid_csv_path: str | None = None,
         test_csv_path: str,
         valid_fraction: float = 0.2,
         seed: int = 0,
@@ -853,10 +854,15 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
         self._numeric_dim = 0
 
         train_rows = _read_csv_rows(train_csv_path)
+        valid_rows: list[dict[str, str]] | None = (
+            _read_csv_rows(valid_csv_path) if valid_csv_path else None
+        )
         test_rows = _read_csv_rows(test_csv_path)
 
         if self._cfg.enable_feature_engineering:
             _apply_feature_engineering(train_rows, cfg=self._cfg)
+            if valid_rows is not None:
+                _apply_feature_engineering(valid_rows, cfg=self._cfg)
             _apply_feature_engineering(test_rows, cfg=self._cfg)
 
         if max_train_rows is not None:
@@ -866,6 +872,8 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
 
         if not train_rows:
             raise ValueError(f"No rows found in {train_csv_path}")
+        if valid_csv_path and not valid_rows:
+            raise ValueError(f"No rows found in {valid_csv_path}")
         if not test_rows:
             raise ValueError(f"No rows found in {test_csv_path}")
 
@@ -874,6 +882,17 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             raise ValueError(f"Missing id column '{self._cfg.id_column}'")
         if self._cfg.target_column not in all_cols:
             raise ValueError(f"Missing target column '{self._cfg.target_column}'")
+
+        if valid_rows is not None:
+            valid_cols = list(valid_rows[0].keys())
+            if self._cfg.id_column not in valid_cols:
+                raise ValueError(
+                    f"Missing id column '{self._cfg.id_column}' in {valid_csv_path}"
+                )
+            if self._cfg.target_column not in valid_cols:
+                raise ValueError(
+                    f"Missing target column '{self._cfg.target_column}' in {valid_csv_path}"
+                )
 
         feature_cols = [
             c
@@ -898,7 +917,9 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             else:
                 categorical_cols.append(c)
 
-        # Build categorical vocab from train+test so unseen test categories don't break
+        # Build categorical vocab from (train + [valid] + test) so unseen categories
+        # don't break (important for cross-validation where validation fold can
+        # contain categories absent from the training fold).
         cat_vocab: dict[str, dict[str, int]] = {}
         for c in categorical_cols:
             vals: list[str] = []
@@ -909,6 +930,14 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
                     if _is_missing(v, cfg=self._cfg)
                     else v
                 )
+            if valid_rows is not None:
+                for r in valid_rows:
+                    v = r.get(c, "")
+                    vals.append(
+                        self._cfg.categorical_missing_token
+                        if _is_missing(v, cfg=self._cfg)
+                        else v
+                    )
             for r in test_rows:
                 v = r.get(c, "")
                 vals.append(
@@ -1005,9 +1034,17 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
             [str(r[self._cfg.id_column]) for r in train_rows], dtype=object
         )
 
-        # Targets: build label mapping
+        # Targets: build label mapping (from train, optionally including valid)
         y_raw = [str(r.get(self._cfg.target_column, "")).strip() for r in train_rows]
+        if valid_rows is not None:
+            y_raw_valid = [
+                str(r.get(self._cfg.target_column, "")).strip() for r in valid_rows
+            ]
+        else:
+            y_raw_valid = None
         uniq_labels = sorted(set(y_raw))
+        if y_raw_valid is not None:
+            uniq_labels = sorted(set(uniq_labels).union(set(y_raw_valid)))
         if class_names is not None:
             ordered = [c for c in class_names if c in uniq_labels]
             missing = [c for c in uniq_labels if c not in ordered]
@@ -1026,15 +1063,31 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
 
         x_all = encode_features(train_rows)
 
-        train_idx, valid_idx = _stratified_split_multiclass(
-            y=y_all, valid_fraction=valid_fraction, seed=seed
-        )
+        if valid_rows is not None:
+            ids_valid = np.asarray(
+                [str(r[self._cfg.id_column]) for r in valid_rows], dtype=object
+            )
+            y_valid = np.asarray(
+                [label_to_int[str(r.get(self._cfg.target_column, "")).strip()] for r in valid_rows],
+                dtype=np.int32,
+            )
+            x_valid = encode_features(valid_rows)
 
-        self._x_train = x_all[train_idx]
-        self._y_train = y_all[train_idx]
-        self._x_valid = x_all[valid_idx]
-        self._y_valid = y_all[valid_idx]
-        self._ids_valid = ids_train[valid_idx]
+            self._x_train = x_all
+            self._y_train = y_all
+            self._x_valid = x_valid
+            self._y_valid = y_valid
+            self._ids_valid = ids_valid
+        else:
+            train_idx, valid_idx = _stratified_split_multiclass(
+                y=y_all, valid_fraction=valid_fraction, seed=seed
+            )
+
+            self._x_train = x_all[train_idx]
+            self._y_train = y_all[train_idx]
+            self._x_valid = x_all[valid_idx]
+            self._y_valid = y_all[valid_idx]
+            self._ids_valid = ids_train[valid_idx]
 
         self._ids_test = np.asarray(
             [str(r[self._cfg.id_column]) for r in test_rows], dtype=object

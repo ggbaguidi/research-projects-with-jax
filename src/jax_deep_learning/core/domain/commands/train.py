@@ -29,10 +29,17 @@ class TrainCommand:
     log_every_steps: int = 1000
 
     # Early stopping (optional)
-    # If >0 and the task is binary classification, stop when validation AUC
-    # hasn't improved for this many epochs. AUC is computed on the provider's
-    # "test" split (which is used as validation in some adapters).
+    # If >0, stop when the chosen validation metric hasn't improved for this
+    # many epochs. Metric choice:
+    # - binary classification: ROC AUC
+    # - multiclass classification: macro-F1 (default) or weighted-F1
+    # Metrics are computed on the provider's "test" split (which is used as
+    # validation in some adapters).
     early_stopping_patience: int = 0
+
+    # For multiclass classification only: which metric to use for early stopping.
+    # Allowed values: "macro_f1", "weighted_f1".
+    multiclass_early_stopping_metric: str = "macro_f1"
 
     # Loss configuration (optional)
     # - "softmax": classic multi-class softmax cross-entropy (default)

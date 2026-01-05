@@ -221,6 +221,52 @@ class TrainClassifierUseCase:
 
         is_binary = info.num_classes == 2
 
+        def _macro_f1_from_confusion(cm: np.ndarray) -> float:
+            """Compute macro-F1 from a (C,C) confusion matrix."""
+
+            cm = np.asarray(cm, dtype=np.float64)
+            tp = np.diag(cm)
+            fp = np.sum(cm, axis=0) - tp
+            fn = np.sum(cm, axis=1) - tp
+            precision = np.divide(
+                tp, tp + fp, out=np.zeros_like(tp), where=(tp + fp) > 0
+            )
+            recall = np.divide(tp, tp + fn, out=np.zeros_like(tp), where=(tp + fn) > 0)
+            f1 = np.divide(
+                2.0 * precision * recall,
+                precision + recall,
+                out=np.zeros_like(tp),
+                where=(precision + recall) > 0,
+            )
+            return float(np.mean(f1))
+
+        def _weighted_f1_from_confusion(cm: np.ndarray) -> float:
+            """Compute weighted-F1 from a (C,C) confusion matrix.
+
+            Weighted-F1 averages per-class F1 weighted by class support.
+            This often matches "F1 score" used in imbalanced multiclass leaderboards.
+            """
+
+            cm = np.asarray(cm, dtype=np.float64)
+            tp = np.diag(cm)
+            fp = np.sum(cm, axis=0) - tp
+            fn = np.sum(cm, axis=1) - tp
+            support = np.sum(cm, axis=1)
+            precision = np.divide(
+                tp, tp + fp, out=np.zeros_like(tp), where=(tp + fp) > 0
+            )
+            recall = np.divide(tp, tp + fn, out=np.zeros_like(tp), where=(tp + fn) > 0)
+            f1 = np.divide(
+                2.0 * precision * recall,
+                precision + recall,
+                out=np.zeros_like(tp),
+                where=(precision + recall) > 0,
+            )
+            denom = float(np.sum(support))
+            if denom <= 0:
+                return 0.0
+            return float(np.sum(f1 * support) / denom)
+
         @jax.jit
         def eval_step(p: Params, x: jax.Array, y: jax.Array):
             logits = self._model.apply(p, x, is_training=False)
@@ -234,10 +280,13 @@ class TrainClassifierUseCase:
         step_key = jax.random.PRNGKey(command.seed + 12345)
 
         best_auc: float | None = None
+        best_f1: float | None = None
+        best_weighted_f1: float | None = None
         best_epoch: int | None = None
         best_params: Params | None = None
         epochs_since_improvement = 0
         auc_improvement_epsilon = 1e-6
+        f1_improvement_epsilon = 1e-6
 
         for epoch in range(1, command.epochs + 1):
             # Train
@@ -283,6 +332,7 @@ class TrainClassifierUseCase:
             # Eval (optional)
             eval_losses = []
             eval_accs = []
+            y_true_pred_all: list[Any] = []
             y_true_all: list[Any] = []
             y_score_all: list[Any] = []
             for batch in self._dataset.iter_batches(
@@ -296,6 +346,10 @@ class TrainClassifierUseCase:
                 logits, l, a = eval_step(params, x, y)
                 eval_losses.append(float(l))
                 eval_accs.append(float(a))
+
+                # For F1 on multiclass (and usable for binary too): collect predicted labels.
+                y_hat = jnp.argmax(logits, axis=-1)
+                y_true_pred_all.append((jnp.asarray(y), jnp.asarray(y_hat)))
 
                 if is_binary:
                     probs = jax.nn.softmax(logits, axis=-1)[:, 1]
@@ -322,6 +376,59 @@ class TrainClassifierUseCase:
                     else:
                         epochs_since_improvement += 1
 
+            eval_macro_f1: float | None = None
+            eval_weighted_f1: float | None = None
+            if y_true_pred_all:
+                yt = np.asarray(
+                    jnp.concatenate([p[0] for p in y_true_pred_all], axis=0),
+                    dtype=np.int32,
+                )
+                yp = np.asarray(
+                    jnp.concatenate([p[1] for p in y_true_pred_all], axis=0),
+                    dtype=np.int32,
+                )
+                c = int(info.num_classes)
+                cm = np.zeros((c, c), dtype=np.int64)
+                mask = (yt >= 0) & (yt < c) & (yp >= 0) & (yp < c)
+                if np.any(mask):
+                    np.add.at(cm, (yt[mask], yp[mask]), 1)
+                eval_macro_f1 = _macro_f1_from_confusion(cm)
+                eval_weighted_f1 = _weighted_f1_from_confusion(cm)
+
+                chosen_metric = (command.multiclass_early_stopping_metric or "macro_f1").strip().lower()
+                if chosen_metric not in {"macro_f1", "weighted_f1"}:
+                    raise TrainingError(
+                        "multiclass_early_stopping_metric must be one of: macro_f1, weighted_f1"
+                    )
+                metric_value = (
+                    float(eval_weighted_f1)
+                    if chosen_metric == "weighted_f1"
+                    else float(eval_macro_f1)
+                )
+
+                # For multiclass tasks, early stopping uses macro-F1 (matches many leaderboards).
+                if (not is_binary) and command.early_stopping_patience:
+                    if chosen_metric == "weighted_f1":
+                        if best_weighted_f1 is None or metric_value > (
+                            best_weighted_f1 + f1_improvement_epsilon
+                        ):
+                            best_weighted_f1 = float(metric_value)
+                            # Keep macro as well for logging/visibility.
+                            best_f1 = float(eval_macro_f1)
+                            best_epoch = int(epoch)
+                            best_params = params
+                            epochs_since_improvement = 0
+                        else:
+                            epochs_since_improvement += 1
+                    else:
+                        if best_f1 is None or metric_value > (best_f1 + f1_improvement_epsilon):
+                            best_f1 = float(metric_value)
+                            best_epoch = int(epoch)
+                            best_params = params
+                            epochs_since_improvement = 0
+                        else:
+                            epochs_since_improvement += 1
+
             epoch_summary = {
                 "epoch": epoch,
                 "test/loss": (
@@ -335,7 +442,13 @@ class TrainClassifierUseCase:
                     else None
                 ),
                 "test/auc": float(eval_auc) if eval_auc is not None else None,
+                "test/macro_f1": float(eval_macro_f1) if eval_macro_f1 is not None else None,
+                "test/weighted_f1": float(eval_weighted_f1)
+                if eval_weighted_f1 is not None
+                else None,
                 "best/auc": best_auc,
+                "best/f1": best_f1,
+                "best/weighted_f1": best_weighted_f1,
                 "best/epoch": best_epoch,
                 "global_step": global_step,
             }
@@ -366,8 +479,27 @@ class TrainClassifierUseCase:
                         )
                     break
 
+            # Early stopping for multiclass tasks using macro-F1.
+            if (not is_binary) and command.early_stopping_patience and best_f1 is not None:
+                if epochs_since_improvement >= command.early_stopping_patience:
+                    if self._metrics:
+                        self._metrics.log(
+                            step=global_step,
+                            metrics={
+                                "event": "early_stop",
+                                "epoch": epoch,
+                                "best/f1": best_f1,
+                                "best/weighted_f1": best_weighted_f1,
+                                "best/epoch": best_epoch,
+                                "patience": int(command.early_stopping_patience),
+                                "metric": (command.multiclass_early_stopping_metric or "macro_f1").strip().lower(),
+                            },
+                        )
+                    break
+
         # Prefer the best params by validation AUC if available.
-        final_params = (
-            best_params if (is_binary and best_params is not None) else params
-        )
+        if best_params is not None:
+            final_params = best_params
+        else:
+            final_params = params
         return TrainResult(params=final_params, history=history)
