@@ -7,7 +7,7 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 import numpy as np
 
-from jax_deep_learning.adapters.right.data_loaders.tabular_csv_kaggle import (
+from jax_deep_learning.adapters.right.data_loaders import (
     TabularCsvBinaryClassificationDatasetProvider,
     TabularCsvConfig,
 )
