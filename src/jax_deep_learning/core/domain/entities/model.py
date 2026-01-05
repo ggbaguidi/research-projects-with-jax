@@ -15,11 +15,11 @@ class ClassifierFns(Protocol):
     Implementations must be JAX-compatible (jit/vmap friendly).
     """
 
-    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params: ...
+    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
+        ...
 
-    def apply(
-        self, params: Params, x: jax.Array, *, is_training: bool
-    ) -> jax.Array: ...
+    def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
+        ...
 
 
 def _derf(
@@ -35,6 +35,9 @@ def _derf(
     Based on arXiv:2512.10938v1, Eq. (10):
         Derf(x) = gamma * erf(alpha * x + s) + beta
 
+    Paper (HTML): https://arxiv.org/html/2512.10938v1
+    Paper (PDF):  https://arxiv.org/pdf/2512.10938v1
+
     This is statistics-free and can be used as a normalization replacement or a
     stable saturating activation.
     """
@@ -47,6 +50,9 @@ class MlpClassifierFns:
     hidden_sizes: tuple[int, ...] = (512, 256)
     param_scale: float = 1e-2
     activation: Callable[[jax.Array], jax.Array] = jax.nn.swish
+    # If True, wraps each hidden layer with `jax.checkpoint` (a.k.a. remat).
+    # This trades compute for lower activation memory, which can help for deeper MLPs.
+    remat: bool = False
 
     def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
         sizes = (input_dim, *self.hidden_sizes, num_classes)
@@ -65,8 +71,16 @@ class MlpClassifierFns:
     def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
         # x: (batch, input_dim)
         h = x
+
+        def _hidden_forward(hh: jax.Array, layer: dict[str, jax.Array]) -> jax.Array:
+            return self.activation(jnp.dot(hh, layer["w"]) + layer["b"])
+
+        hidden_forward = (
+            jax.checkpoint(_hidden_forward) if self.remat else _hidden_forward
+        )
+
         for layer in params[:-1]:
-            h = self.activation(jnp.dot(h, layer["w"]) + layer["b"])
+            h = hidden_forward(h, layer)
         last = params[-1]
         return jnp.dot(h, last["w"]) + last["b"]
 
@@ -75,9 +89,13 @@ class MlpClassifierFns:
 class DerfMlpClassifierFns:
     """MLP classifier using Derf as a normalization-free activation.
 
+    Reference: "Stronger Normalization-Free Transformers" (Derf)
+      - HTML: https://arxiv.org/html/2512.10938v1
+      - PDF:  https://arxiv.org/pdf/2512.10938v1
+
     This keeps the existing 'pure functions' interface while incorporating the
-    paper's learnable, point-wise Derf mapping. It is especially handy in
-    tabular settings where LayerNorm is often omitted but training stability and
+    paper's learnable, point-wise Derf mapping. It is especially handy in tabular
+    settings where LayerNorm is often omitted but training stability and
     generalization can still benefit from bounded, zero-centered transforms.
     """
 
@@ -85,6 +103,9 @@ class DerfMlpClassifierFns:
     param_scale: float = 1e-2
     derf_alpha_init: float = 0.5
     derf_s_init: float = 0.0
+    # If True, wraps each hidden layer with `jax.checkpoint` (a.k.a. remat).
+    # This trades compute for lower activation memory, which can help for deeper MLPs.
+    remat: bool = False
 
     def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
         sizes = (input_dim, *self.hidden_sizes, num_classes)
@@ -117,12 +138,21 @@ class DerfMlpClassifierFns:
     def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
         h = x
 
+        def _hidden_forward(hh: jax.Array, layer: dict[str, Any]) -> jax.Array:
+            lin = layer["linear"]
+            z = jnp.dot(hh, lin["w"]) + lin["b"]
+            d = layer["derf"]
+            return _derf(
+                z, alpha=d["alpha"], s=d["s"], gamma=d["gamma"], beta=d["beta"]
+            )
+
+        hidden_forward = (
+            jax.checkpoint(_hidden_forward) if self.remat else _hidden_forward
+        )
+
         # All but last are hidden layers
         for layer in params[:-1]:
-            lin = layer["linear"]
-            z = jnp.dot(h, lin["w"]) + lin["b"]
-            d = layer["derf"]
-            h = _derf(z, alpha=d["alpha"], s=d["s"], gamma=d["gamma"], beta=d["beta"])
+            h = hidden_forward(h, layer)
 
         last = (
             params[-1]["linear"]

@@ -25,27 +25,33 @@ warnings.filterwarnings(
 )
 
 from jax_deep_learning.adapters.left.inject_config import configure_injections
-from jax_deep_learning.adapters.right.checkpoints_filesystem import \
-    FilesystemCheckpointStore
+from jax_deep_learning.adapters.right.checkpoints_filesystem import (
+    FilesystemCheckpointStore,
+)
 from jax_deep_learning.adapters.right.data_loaders import (
     NpzClassificationDatasetProvider,
-    TabularCsvBinaryClassificationDatasetProvider, TabularCsvConfig,
+    TabularCsvBinaryClassificationDatasetProvider,
+    TabularCsvConfig,
     TabularCsvMulticlassClassificationDatasetProvider,
-    TfdsClassificationDatasetProvider)
+    TfdsClassificationDatasetProvider,
+)
 from jax_deep_learning.adapters.right.metrics_jsonl import (
-    CompositeMetricsSink, JsonlFileMetricsSink)
-from jax_deep_learning.adapters.right.metrics_plotting import \
-    plot_metrics_from_logs
+    CompositeMetricsSink,
+    JsonlFileMetricsSink,
+)
+from jax_deep_learning.adapters.right.metrics_plotting import plot_metrics_from_logs
 from jax_deep_learning.adapters.right.metrics_stdout import StdoutMetricsSink
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.model import (
-    DerfMlpClassifierFns, MlpClassifierFns, TabularEmbedMlpClassifierFns)
+    DerfMlpClassifierFns,
+    MlpClassifierFns,
+    TabularEmbedMlpClassifierFns,
+)
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
 from jax_deep_learning.core.ports.dataset_provider import DatasetProviderPort
 from jax_deep_learning.core.ports.metrics_sink import MetricsSinkPort
-from jax_deep_learning.core.use_cases.train_classifier import \
-    TrainClassifierUseCase
+from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -195,6 +201,11 @@ def train(
         "mlp",
         help="Model to use: mlp | derf-mlp",
     ),
+    remat: bool = typer.Option(
+        False,
+        "--remat/--no-remat",
+        help="Use jax.checkpoint per layer (helps deep nets fit in memory; slower)",
+    ),
     seed: int = typer.Option(0),
     ckpt_dir: str = typer.Option("", help="If set, save checkpoints to this folder"),
     log_path: str = typer.Option(
@@ -241,9 +252,9 @@ def train(
 
     model_kind = model_kind.lower().strip()
     if model_kind == "mlp":
-        model = MlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = MlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     elif model_kind in {"derf", "derf-mlp"}:
-        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     else:
         raise typer.BadParameter("model_kind must be one of: mlp, derf-mlp")
 
@@ -279,6 +290,7 @@ def train(
             "command": "train",
             "dataset_kind": dataset_kind,
             "model_kind": model_kind,
+            "remat": bool(remat),
             "epochs": epochs,
             "batch_size": batch_size,
             "lr": lr,
@@ -330,6 +342,11 @@ def kaggle_diabetes(
     model_kind: str = typer.Option(
         "derf-mlp",
         help="Model to use: derf-mlp (default) | mlp | tabular-embed-mlp",
+    ),
+    remat: bool = typer.Option(
+        False,
+        "--remat/--no-remat",
+        help="Use jax.checkpoint per layer (helps deep nets fit in memory; slower)",
     ),
     seed: int = typer.Option(0),
     cpu: bool = typer.Option(
@@ -410,9 +427,9 @@ def kaggle_diabetes(
     )
 
     if model_kind == "mlp":
-        model = MlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = MlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     elif model_kind in {"derf", "derf-mlp"}:
-        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     elif model_kind in {"tabular-embed-mlp", "embed-mlp"}:
         model = TabularEmbedMlpClassifierFns(
             n_numeric=dataset.numeric_dim,
@@ -457,6 +474,7 @@ def kaggle_diabetes(
             "data_dir": data_dir,
             "dataset": dataset.describe(),
             "model_kind": model_kind,
+            "remat": bool(remat),
             "embed_dim": int(embed_dim),
             "epochs": epochs,
             "batch_size": batch_size,
@@ -565,6 +583,11 @@ def zindi_financial_health(
         "derf-mlp",
         help="Model to use: derf-mlp (default) | mlp | tabular-embed-mlp",
     ),
+    remat: bool = typer.Option(
+        False,
+        "--remat/--no-remat",
+        help="Use jax.checkpoint per layer (helps deep nets fit in memory; slower)",
+    ),
     seed: int = typer.Option(0),
     cpu: bool = typer.Option(
         True,
@@ -653,9 +676,9 @@ def zindi_financial_health(
     )
 
     if model_kind == "mlp":
-        model = MlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = MlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     elif model_kind in {"derf", "derf-mlp"}:
-        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden))
+        model = DerfMlpClassifierFns(hidden_sizes=tuple(hidden), remat=bool(remat))
     elif model_kind in {"tabular-embed-mlp", "embed-mlp"}:
         model = TabularEmbedMlpClassifierFns(
             n_numeric=dataset.numeric_dim,
@@ -700,6 +723,7 @@ def zindi_financial_health(
             "data_dir": data_dir,
             "dataset": dataset.describe(),
             "model_kind": model_kind,
+            "remat": bool(remat),
             "embed_dim": int(embed_dim),
             "epochs": epochs,
             "batch_size": batch_size,

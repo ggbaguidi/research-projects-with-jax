@@ -11,6 +11,7 @@ from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.base import Batch
 from jax_deep_learning.core.domain.entities.dataset import DatasetInfo
 from jax_deep_learning.core.ports.dataset_provider import DatasetProviderPort
+from jax_deep_learning.core.ports.metrics_sink import MetricsSinkPort
 from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
 
 
@@ -41,6 +42,14 @@ class _TinyDataset(DatasetProviderPort):
             yield Batch(x=x[sel], y=y[sel])
 
 
+class _CaptureMetricsSink(MetricsSinkPort):
+    def __init__(self) -> None:
+        self.records: list[tuple[int, dict[str, object]]] = []
+
+    def log(self, *, step: int, metrics: dict[str, object]) -> None:
+        self.records.append((int(step), dict(metrics)))
+
+
 def test_train_classifier_runs_one_epoch() -> None:
     use_case = TrainClassifierUseCase(dataset_provider=_TinyDataset())
     result = use_case.run(
@@ -58,3 +67,28 @@ def test_train_classifier_runs_one_epoch() -> None:
     )
     assert result.history
     assert result.history[-1]["epoch"] == 1
+
+
+def test_train_classifier_emits_stability_metrics() -> None:
+    sink = _CaptureMetricsSink()
+    use_case = TrainClassifierUseCase(
+        dataset_provider=_TinyDataset(), metrics_sink=sink
+    )
+    use_case.run(
+        TrainCommand(
+            epochs=1,
+            batch_size=16,
+            learning_rate=1e-2,
+            log_every_steps=1,
+        )
+    )
+
+    merged: dict[str, object] = {}
+    for _, m in sink.records:
+        merged.update(m)
+
+    # Should be logged at least once.
+    assert "train/grad_norm" in merged
+    assert "train/param_norm" in merged
+    assert "train/update_norm" in merged
+    assert "train/update_ratio" in merged

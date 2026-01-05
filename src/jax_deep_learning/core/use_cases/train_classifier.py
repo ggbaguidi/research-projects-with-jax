@@ -10,9 +10,11 @@ import optax
 
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.base import Batch, StepMetrics
-from jax_deep_learning.core.domain.entities.model import (ClassifierFns,
-                                                          MlpClassifierFns,
-                                                          Params)
+from jax_deep_learning.core.domain.entities.model import (
+    ClassifierFns,
+    MlpClassifierFns,
+    Params,
+)
 from jax_deep_learning.core.domain.errors.training import TrainingError
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
@@ -88,7 +90,16 @@ class TrainClassifierUseCase:
             loss, grads = jax.value_and_grad(_loss_fn)(p)
             updates, s2 = optimizer.update(grads, s, p)
             p2 = optax.apply_updates(p, updates)
-            return p2, s2, loss
+
+            # Stability diagnostics (cheap, useful for deeper networks):
+            # Inspired by the stability analysis mindset in mHC:
+            #   "mHC: Manifold-Constrained Hyper-Connections" (arXiv:2512.24880)
+            #   HTML: https://arxiv.org/html/2512.24880v1
+            grad_norm = optax.global_norm(grads)
+            param_norm = optax.global_norm(p)
+            update_norm = optax.global_norm(updates)
+            update_ratio = update_norm / (param_norm + 1e-12)
+            return p2, s2, loss, grad_norm, param_norm, update_norm, update_ratio
 
         is_binary = info.num_classes == 2
 
@@ -118,14 +129,29 @@ class TrainClassifierUseCase:
             ):
                 x = _prepare_x(jnp.asarray(batch.x))
                 y = jnp.asarray(batch.y).astype(jnp.int32)
-                params, opt_state, loss = train_step(params, opt_state, x, y)
+                (
+                    params,
+                    opt_state,
+                    loss,
+                    grad_norm,
+                    param_norm,
+                    update_norm,
+                    update_ratio,
+                ) = train_step(params, opt_state, x, y)
                 global_step += 1
 
                 if self._metrics and (global_step % command.log_every_steps == 0):
                     m = loss_and_metrics(params, batch)
                     self._metrics.log(
                         step=global_step,
-                        metrics={"train/loss": m.loss, "train/acc": m.accuracy},
+                        metrics={
+                            "train/loss": m.loss,
+                            "train/acc": m.accuracy,
+                            "train/grad_norm": float(grad_norm),
+                            "train/param_norm": float(param_norm),
+                            "train/update_norm": float(update_norm),
+                            "train/update_ratio": float(update_ratio),
+                        },
                     )
 
             # Eval (optional)
