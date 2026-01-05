@@ -23,6 +23,14 @@ class TabularCsvConfig:
     # - "index": append one integer index per categorical column (for embedding models)
     categorical_encoding: str = "onehot"
     enable_feature_engineering: bool = True
+    # Feature engineering profile (used only when enable_feature_engineering=True):
+    # - "diabetes": engineered features for the Kaggle diabetes playground dataset
+    # - "zindi_financial_health": engineered features for the data.org Financial Health challenge
+    feature_engineering_kind: str = "diabetes"
+
+
+def _safe_lower(s: str) -> str:
+    return (s or "").strip().lower()
 
 
 def _can_float(s: str) -> bool:
@@ -58,7 +66,7 @@ def _format_int_for_csv(x: int) -> str:
     return "1" if int(x) != 0 else "0"
 
 
-def _apply_feature_engineering(
+def _apply_feature_engineering_diabetes(
     rows: list[dict[str, str]], *, cfg: TabularCsvConfig
 ) -> None:
     """In-place feature engineering (pandas-free).
@@ -221,6 +229,106 @@ def _apply_feature_engineering(
             if bmi == bmi and act == act and tg == tg:
                 silent = (bmi < 25) and (act > 150) and (tg > 150)
                 r["Silent_Diabetic"] = _format_int_for_csv(int(silent))
+
+
+def _apply_feature_engineering_zindi_financial_health(
+    rows: list[dict[str, str]], *, cfg: TabularCsvConfig
+) -> None:
+    """Feature engineering for the data.org Financial Health challenge.
+
+    Adds (when source columns exist):
+      - profit_margin = (personal_income - business_expenses) / personal_income, capped to [-1, 1]
+      - financial_access_score in [0, 1] based on access to formal financial services
+
+    Notes:
+      - Numeric engineered features are stored as strings using _format_float_for_csv.
+      - Missing stays missing (empty string).
+    """
+
+    def has_cols(*cols: str) -> bool:
+        for c in cols:
+            if not any((c in r) for r in rows):
+                return False
+        return True
+
+    add_profit_margin = has_cols("personal_income", "business_expenses")
+
+    # Use only columns that actually exist; normalize by those present.
+    access_cols = [
+        "has_loan_account",
+        "has_internet_banking",
+        "has_debit_card",
+        "has_credit_card",
+        "has_mobile_money",
+        "has_insurance",
+        "medical_insurance",
+        "funeral_insurance",
+        "motor_vehicle_insurance",
+    ]
+    available_access_cols = [c for c in access_cols if any((c in r) for r in rows)]
+
+    def access_value_score(v: str) -> float | None:
+        if _is_missing(v, cfg=cfg):
+            return None
+        s = _safe_lower(v)
+        # Past access gets partial credit.
+        if "used to have" in s:
+            return 0.5
+        # Current access signals.
+        if "have now" in s:
+            return 1.0
+        if s in {"yes", "y", "true", "1"}:
+            return 1.0
+        if s.startswith("yes"):
+            # e.g. "Yes, always", "Yes, sometimes"
+            return 1.0
+        # Explicit negatives or other categories.
+        if s in {"no", "n", "false", "0"}:
+            return 0.0
+        if "never had" in s:
+            return 0.0
+        if "don't have now" in s:
+            # Should have been caught by "used to have" but keep as safety.
+            return 0.0
+        if "don't know" in s or "n/a" in s:
+            return None
+        # Default: treat as unknown -> missing.
+        return None
+
+    for r in rows:
+        # profit_margin
+        if add_profit_margin:
+            income = _to_float_or_nan(r.get("personal_income", ""), cfg=cfg)
+            expenses = _to_float_or_nan(r.get("business_expenses", ""), cfg=cfg)
+            if income == income and expenses == expenses and income != 0.0:
+                margin = (income - expenses) / income
+                # Cap to [-1, 1] to reduce extreme effects.
+                if margin > 1.0:
+                    margin = 1.0
+                elif margin < -1.0:
+                    margin = -1.0
+                r["profit_margin"] = _format_float_for_csv(float(margin))
+
+        # financial_access_score
+        if available_access_cols:
+            scores: list[float] = []
+            for c in available_access_cols:
+                sc = access_value_score(r.get(c, ""))
+                if sc is not None:
+                    scores.append(float(sc))
+            if scores:
+                r["financial_access_score"] = _format_float_for_csv(float(sum(scores) / len(scores)))
+
+
+def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvConfig) -> None:
+    kind = _safe_lower(getattr(cfg, "feature_engineering_kind", "diabetes"))
+    if kind in {"diabetes", "kaggle_diabetes", "kaggle"}:
+        _apply_feature_engineering_diabetes(rows, cfg=cfg)
+    elif kind in {"zindi_financial_health", "zindi-financial-health", "zindi"}:
+        _apply_feature_engineering_zindi_financial_health(rows, cfg=cfg)
+    else:
+        # Unknown kind: do nothing (safer than crashing in the CLI).
+        return
 
 
 def _stratified_split_binary(

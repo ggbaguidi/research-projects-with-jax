@@ -545,6 +545,11 @@ def zindi_financial_health(
         "--confusion-matrix/--no-confusion-matrix",
         help="Print a confusion matrix for the validation split",
     ),
+    feature_engineering: bool = typer.Option(
+        True,
+        "--feature-engineering/--no-feature-engineering",
+        help="Enable simple domain feature engineering (profit_margin, financial_access_score)",
+    ),
 ) -> None:
     """Train and generate a Zindi submission for the data.org Financial Health challenge.
 
@@ -566,7 +571,8 @@ def zindi_financial_health(
     tab_cfg = TabularCsvConfig(
         id_column="ID",
         target_column="Target",
-        enable_feature_engineering=False,
+        enable_feature_engineering=bool(feature_engineering),
+        feature_engineering_kind="zindi_financial_health",
         categorical_encoding=(
             "index" if model_kind == "tabular-embed-mlp" else "onehot"
         ),
