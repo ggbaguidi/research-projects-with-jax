@@ -216,6 +216,25 @@ def train(
         min=0,
         help="If >0 and binary classification, stop when valid AUC hasn't improved for N epochs",
     ),
+    loss_kind: str = typer.Option(
+        "softmax",
+        help="Loss to use: softmax | ordinal | ordinal-rank (ordinal is best for ordered labels)",
+    ),
+    ordinal_rank_lambda: float = typer.Option(
+        0.05,
+        min=0.0,
+        help="Ranking regularizer weight (only used for loss_kind=ordinal-rank)",
+    ),
+    ordinal_rank_margin: float = typer.Option(
+        0.25,
+        min=0.0,
+        help="Ranking margin (only used for loss_kind=ordinal-rank)",
+    ),
+    ordinal_rank_pairs_per_batch: int = typer.Option(
+        256,
+        min=0,
+        help="Pairs to sample per batch for ranking (0 => all pairs; only used for loss_kind=ordinal-rank)",
+    ),
 ) -> None:
     """Train a simple classifier using the core training use case."""
 
@@ -273,6 +292,10 @@ def train(
         hidden_sizes=tuple(hidden),
         log_every_steps=100,
         early_stopping_patience=early_stopping_patience,
+        loss_kind=str(loss_kind),
+        ordinal_rank_lambda=float(ordinal_rank_lambda),
+        ordinal_rank_margin=float(ordinal_rank_margin),
+        ordinal_rank_pairs_per_batch=int(ordinal_rank_pairs_per_batch),
     )
 
     use_case = inject.instance(TrainClassifierUseCase)
@@ -296,6 +319,10 @@ def train(
             "adamw/nesterov": bool(adamw_nesterov),
             "seed": seed,
             "early_stopping_patience": early_stopping_patience,
+            "loss_kind": str(loss_kind),
+            "ordinal_rank_lambda": float(ordinal_rank_lambda),
+            "ordinal_rank_margin": float(ordinal_rank_margin),
+            "ordinal_rank_pairs_per_batch": int(ordinal_rank_pairs_per_batch),
         },
     )
 
@@ -619,6 +646,25 @@ def zindi_financial_health(
         "--feature-engineering/--no-feature-engineering",
         help="Enable simple domain feature engineering (profit_margin, financial_access_score)",
     ),
+    loss_kind: str = typer.Option(
+        "ordinal-rank",
+        help="Loss to use: softmax | ordinal | ordinal-rank (recommended for Low/Medium/High)",
+    ),
+    ordinal_rank_lambda: float = typer.Option(
+        0.05,
+        min=0.0,
+        help="Ranking regularizer weight (only used for loss_kind=ordinal-rank)",
+    ),
+    ordinal_rank_margin: float = typer.Option(
+        0.25,
+        min=0.0,
+        help="Ranking margin (only used for loss_kind=ordinal-rank)",
+    ),
+    ordinal_rank_pairs_per_batch: int = typer.Option(
+        256,
+        min=0,
+        help="Pairs to sample per batch for ranking (0 => all pairs; only used for loss_kind=ordinal-rank)",
+    ),
 ) -> None:
     """Train and generate a Zindi submission for the data.org Financial Health challenge.
 
@@ -699,6 +745,10 @@ def zindi_financial_health(
         hidden_sizes=tuple(hidden),
         log_every_steps=50,
         early_stopping_patience=0,  # accuracy-only task
+        loss_kind=str(loss_kind),
+        ordinal_rank_lambda=float(ordinal_rank_lambda),
+        ordinal_rank_margin=float(ordinal_rank_margin),
+        ordinal_rank_pairs_per_batch=int(ordinal_rank_pairs_per_batch),
     )
 
     configure_injections(
@@ -735,6 +785,10 @@ def zindi_financial_health(
             "out_path": str(out_path_p),
             "add_noise": bool(add_noise),
             "noise_std": noise_std,
+            "loss_kind": str(loss_kind),
+            "ordinal_rank_lambda": float(ordinal_rank_lambda),
+            "ordinal_rank_margin": float(ordinal_rank_margin),
+            "ordinal_rank_pairs_per_batch": int(ordinal_rank_pairs_per_batch),
         },
     )
 

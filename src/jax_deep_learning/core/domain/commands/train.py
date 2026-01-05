@@ -33,3 +33,17 @@ class TrainCommand:
     # hasn't improved for this many epochs. AUC is computed on the provider's
     # "test" split (which is used as validation in some adapters).
     early_stopping_patience: int = 0
+
+    # Loss configuration (optional)
+    # - "softmax": classic multi-class softmax cross-entropy (default)
+    # - "ordinal": ordinal decomposition loss derived from softmax probabilities
+    # - "ordinal-rank": ordinal loss + pairwise ranking regularizer on expected class score
+    loss_kind: str = "softmax"
+
+    # Pairwise ranking regularizer (only used when loss_kind="ordinal-rank")
+    # The score is s(x)=E[class|x] = sum_k k * softmax(logits)_k.
+    ordinal_rank_lambda: float = 0.05
+    ordinal_rank_margin: float = 0.25
+    # How many ordered pairs to sample per batch (0 => use all ordered pairs).
+    # Sampling avoids O(B^2) work for large batches.
+    ordinal_rank_pairs_per_batch: int = 256
