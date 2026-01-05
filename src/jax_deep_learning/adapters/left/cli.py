@@ -25,37 +25,85 @@ warnings.filterwarnings(
 )
 
 from jax_deep_learning.adapters.left.inject_config import configure_injections
-from jax_deep_learning.adapters.right.checkpoints_filesystem import (
-    FilesystemCheckpointStore,
-)
+from jax_deep_learning.adapters.right.checkpoints_filesystem import \
+    FilesystemCheckpointStore
 from jax_deep_learning.adapters.right.data_loaders import (
     NpzClassificationDatasetProvider,
-    TabularCsvBinaryClassificationDatasetProvider,
-    TabularCsvConfig,
+    TabularCsvBinaryClassificationDatasetProvider, TabularCsvConfig,
     TabularCsvMulticlassClassificationDatasetProvider,
-    TfdsClassificationDatasetProvider,
-)
+    TfdsClassificationDatasetProvider)
 from jax_deep_learning.adapters.right.metrics_jsonl import (
-    CompositeMetricsSink,
-    JsonlFileMetricsSink,
-)
+    CompositeMetricsSink, JsonlFileMetricsSink)
+from jax_deep_learning.adapters.right.metrics_plotting import \
+    plot_metrics_from_logs
 from jax_deep_learning.adapters.right.metrics_stdout import StdoutMetricsSink
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.model import (
-    DerfMlpClassifierFns,
-    MlpClassifierFns,
-    TabularEmbedMlpClassifierFns,
-)
+    DerfMlpClassifierFns, MlpClassifierFns, TabularEmbedMlpClassifierFns)
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort
 from jax_deep_learning.core.ports.dataset_provider import DatasetProviderPort
 from jax_deep_learning.core.ports.metrics_sink import MetricsSinkPort
-from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUseCase
+from jax_deep_learning.core.use_cases.train_classifier import \
+    TrainClassifierUseCase
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
-def _confusion_matrix_counts(*, y_true: np.ndarray, y_pred: np.ndarray, n_classes: int) -> np.ndarray:
+@app.command(name="plot-metrics")
+def plot_metrics(
+    log_paths: list[Path] = typer.Argument(
+        ...,
+        help="One or more JSONL log files written by --log-path (e.g. logs/run.jsonl)",
+    ),
+    out_path: str = typer.Option(
+        "metrics.png",
+        help="Where to save the plot image (PNG). Ignored if --show is used without saving.",
+    ),
+    show: bool = typer.Option(
+        False,
+        "--show/--no-show",
+        help="Show an interactive window (requires a GUI backend).",
+    ),
+    x_axis: str = typer.Option(
+        "step",
+        help="X axis to use: step | global_step | epoch",
+    ),
+    metrics: list[str] = typer.Option(
+        [],
+        "--metric",
+        help="Repeatable metric keys to plot (e.g. --metric train/loss --metric test/loss). Defaults to common metrics.",
+    ),
+    group_by: str = typer.Option(
+        "suffix",
+        help="How to group plots: suffix (loss/acc/auc) | none (one subplot per metric)",
+    ),
+    title: str = typer.Option(
+        "",
+        help="Optional figure title",
+    ),
+) -> None:
+    """Plot training metrics from JSONL logs."""
+
+    # If user only wants to show, allow out_path to be empty.
+    out: str | None = out_path.strip() if out_path.strip() else None
+
+    saved = plot_metrics_from_logs(
+        log_paths=log_paths,
+        out_path=out,
+        show=bool(show),
+        x_axis=x_axis,
+        metrics=metrics if metrics else None,
+        group_by=group_by,
+        title=title.strip() or None,
+    )
+    if saved is not None:
+        typer.echo(f"Saved plot to: {saved}")
+
+
+def _confusion_matrix_counts(
+    *, y_true: np.ndarray, y_pred: np.ndarray, n_classes: int
+) -> np.ndarray:
     """Return integer confusion matrix of shape (C, C) for labels in [0, C).
 
     Rows are true labels, columns are predicted labels.
@@ -64,7 +112,9 @@ def _confusion_matrix_counts(*, y_true: np.ndarray, y_pred: np.ndarray, n_classe
     yt = np.asarray(y_true, dtype=np.int32).reshape(-1)
     yp = np.asarray(y_pred, dtype=np.int32).reshape(-1)
     if yt.shape[0] != yp.shape[0]:
-        raise ValueError(f"y_true and y_pred must have same length, got {yt.shape[0]} vs {yp.shape[0]}")
+        raise ValueError(
+            f"y_true and y_pred must have same length, got {yt.shape[0]} vs {yp.shape[0]}"
+        )
     if n_classes <= 0:
         raise ValueError(f"n_classes must be > 0, got {n_classes}")
 
@@ -87,7 +137,9 @@ def _print_confusion_matrix(*, cm: np.ndarray, class_names: tuple[str, ...]) -> 
     if cm.shape != (n, n):
         raise ValueError(f"cm must be square, got shape={cm.shape}")
     if len(class_names) != n:
-        raise ValueError(f"class_names length must match cm size, got {len(class_names)} vs {n}")
+        raise ValueError(
+            f"class_names length must match cm size, got {len(class_names)} vs {n}"
+        )
 
     name_w = max(4, max(len(str(x)) for x in class_names))
     cell_w = max(7, max(len(str(int(x))) for x in cm.reshape(-1).tolist()) + 1)
