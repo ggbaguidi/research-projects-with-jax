@@ -11,8 +11,7 @@ class DatasetProviderPort(Protocol):
     """Port for providing supervised mini-batches to the core."""
 
     @property
-    def info(self) -> DatasetInfo:
-        ...
+    def info(self) -> DatasetInfo: ...
 
     def iter_batches(
         self,
@@ -21,5 +20,4 @@ class DatasetProviderPort(Protocol):
         batch_size: int,
         shuffle: bool,
         seed: int,
-    ) -> Iterable[Batch]:
-        ...
+    ) -> Iterable[Batch]: ...

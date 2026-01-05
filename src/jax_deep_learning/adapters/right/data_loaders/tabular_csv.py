@@ -317,10 +317,14 @@ def _apply_feature_engineering_zindi_financial_health(
                 if sc is not None:
                     scores.append(float(sc))
             if scores:
-                r["financial_access_score"] = _format_float_for_csv(float(sum(scores) / len(scores)))
+                r["financial_access_score"] = _format_float_for_csv(
+                    float(sum(scores) / len(scores))
+                )
 
 
-def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvConfig) -> None:
+def _apply_feature_engineering(
+    rows: list[dict[str, str]], *, cfg: TabularCsvConfig
+) -> None:
     kind = _safe_lower(getattr(cfg, "feature_engineering_kind", "diabetes"))
     if kind in {"diabetes", "kaggle_diabetes", "kaggle"}:
         _apply_feature_engineering_diabetes(rows, cfg=cfg)
@@ -654,9 +658,11 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
                 idx = np.asarray(
                     [
                         vocab[
-                            self._cfg.categorical_missing_token
-                            if _is_missing(r.get(c, ""), cfg=self._cfg)
-                            else r.get(c, "")
+                            (
+                                self._cfg.categorical_missing_token
+                                if _is_missing(r.get(c, ""), cfg=self._cfg)
+                                else r.get(c, "")
+                            )
                         ]
                         for r in rows
                     ],
@@ -972,9 +978,11 @@ class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
                 idx = np.asarray(
                     [
                         vocab[
-                            self._cfg.categorical_missing_token
-                            if _is_missing(r.get(c, ""), cfg=self._cfg)
-                            else r.get(c, "")
+                            (
+                                self._cfg.categorical_missing_token
+                                if _is_missing(r.get(c, ""), cfg=self._cfg)
+                                else r.get(c, "")
+                            )
                         ]
                         for r in rows
                     ],

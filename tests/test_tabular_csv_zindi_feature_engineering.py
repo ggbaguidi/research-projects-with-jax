@@ -19,7 +19,9 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) ->
             w.writerow(r)
 
 
-def test_zindi_feature_engineering_adds_expected_numeric_features(tmp_path: Path) -> None:
+def test_zindi_feature_engineering_adds_expected_numeric_features(
+    tmp_path: Path,
+) -> None:
     train_path = tmp_path / "Train.csv"
     test_path = tmp_path / "Test.csv"
 

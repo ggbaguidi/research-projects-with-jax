@@ -15,11 +15,11 @@ class ClassifierFns(Protocol):
     Implementations must be JAX-compatible (jit/vmap friendly).
     """
 
-    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params:
-        ...
+    def init(self, *, key: jax.Array, input_dim: int, num_classes: int) -> Params: ...
 
-    def apply(self, params: Params, x: jax.Array, *, is_training: bool) -> jax.Array:
-        ...
+    def apply(
+        self, params: Params, x: jax.Array, *, is_training: bool
+    ) -> jax.Array: ...
 
 
 def _derf(

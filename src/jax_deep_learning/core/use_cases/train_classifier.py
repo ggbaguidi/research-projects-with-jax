@@ -174,12 +174,16 @@ class TrainClassifierUseCase:
 
             epoch_summary = {
                 "epoch": epoch,
-                "test/loss": float(sum(eval_losses) / max(1, len(eval_losses)))
-                if eval_losses
-                else None,
-                "test/acc": float(sum(eval_accs) / max(1, len(eval_accs)))
-                if eval_accs
-                else None,
+                "test/loss": (
+                    float(sum(eval_losses) / max(1, len(eval_losses)))
+                    if eval_losses
+                    else None
+                ),
+                "test/acc": (
+                    float(sum(eval_accs) / max(1, len(eval_accs)))
+                    if eval_accs
+                    else None
+                ),
                 "test/auc": float(eval_auc) if eval_auc is not None else None,
                 "best/auc": best_auc,
                 "best/epoch": best_epoch,
