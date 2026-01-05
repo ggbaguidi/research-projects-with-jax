@@ -204,10 +204,7 @@ def _apply_feature_engineering(rows: list[dict[str, str]], *, cfg: TabularCsvCon
             if bmi == bmi and act == act and tg == tg:
                 silent = (bmi < 25) and (act > 150) and (tg > 150)
                 r["Silent_Diabetic"] = _format_int_for_csv(int(silent))
-    try:
-        return float(s)
-    except Exception:
-        return float("nan")
+
 
 
 def _stratified_split_binary(
@@ -266,6 +263,96 @@ def _stratified_split_binary(
 
     valid_idx = np.concatenate([idx0[:n_valid_0], idx1[:n_valid_1]], axis=0)
     train_idx = np.concatenate([idx0[n_valid_0:], idx1[n_valid_1:]], axis=0)
+    rng.shuffle(valid_idx)
+    rng.shuffle(train_idx)
+    return train_idx, valid_idx
+
+
+def _stratified_split_multiclass(
+    *,
+    y: np.ndarray,
+    valid_fraction: float,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (train_idx, valid_idx) for integer labels with stratification.
+
+    Ensures that, when possible, each class keeps at least 1 example in the
+    training set. Falls back to a random split for degenerate inputs.
+    """
+
+    y = np.asarray(y).astype(np.int32)
+    n = int(y.shape[0])
+
+    rng = np.random.default_rng(seed)
+
+    n_valid_total = int(round(n * valid_fraction))
+    n_valid_total = max(1, min(n_valid_total, n - 1))
+
+    classes, counts = np.unique(y, return_counts=True)
+    if classes.size <= 1:
+        idx = np.arange(n)
+        rng.shuffle(idx)
+        valid_idx = idx[:n_valid_total]
+        train_idx = idx[n_valid_total:]
+        return train_idx, valid_idx
+
+    # Desired per-class allocation (rounded) with constraints.
+    per_class_valid: dict[int, int] = {}
+    for c, cnt in zip(classes.tolist(), counts.tolist()):
+        if cnt <= 1:
+            per_class_valid[int(c)] = 0
+            continue
+        target = int(round(n_valid_total * (cnt / n)))
+        # Keep at least 1 in valid (if possible) but also at least 1 in train.
+        target = max(1, min(target, cnt - 1))
+        per_class_valid[int(c)] = int(target)
+
+    # Adjust totals to match n_valid_total.
+    def total_valid() -> int:
+        return int(sum(per_class_valid.values()))
+
+    # Reduce if we overshot.
+    while total_valid() > n_valid_total:
+        # Reduce from the class with the largest current allocation (but not below 0).
+        c_best = None
+        best_v = 0
+        for c, v in per_class_valid.items():
+            if v > best_v and v > 0:
+                c_best = c
+                best_v = v
+        if c_best is None:
+            break
+        per_class_valid[c_best] -= 1
+
+    # Increase if we undershot.
+    if total_valid() < n_valid_total:
+        count_by_class = {int(c): int(cnt) for c, cnt in zip(classes.tolist(), counts.tolist())}
+        while total_valid() < n_valid_total:
+            # Add to the class with most remaining capacity.
+            c_best = None
+            best_cap = -1
+            for c, cnt in count_by_class.items():
+                cap = (cnt - 1) - per_class_valid.get(c, 0)
+                if cap > best_cap and cap > 0:
+                    c_best = c
+                    best_cap = cap
+            if c_best is None:
+                break
+            per_class_valid[c_best] += 1
+
+    # Materialize indices.
+    valid_parts: list[np.ndarray] = []
+    train_parts: list[np.ndarray] = []
+    for c in classes.tolist():
+        c = int(c)
+        idx = np.where(y == c)[0]
+        rng.shuffle(idx)
+        n_valid_c = int(per_class_valid.get(c, 0))
+        valid_parts.append(idx[:n_valid_c])
+        train_parts.append(idx[n_valid_c:])
+
+    valid_idx = np.concatenate(valid_parts, axis=0)
+    train_idx = np.concatenate(train_parts, axis=0)
     rng.shuffle(valid_idx)
     rng.shuffle(train_idx)
     return train_idx, valid_idx
@@ -553,4 +640,295 @@ class TabularCsvBinaryClassificationDatasetProvider(DatasetProviderPort):
     def get_inference(self) -> tuple[np.ndarray, np.ndarray]:
         """Return (ids_test, x_test) for Kaggle submission."""
 
+        return self._ids_test, self._x_test
+
+
+class TabularCsvMulticlassClassificationDatasetProvider(DatasetProviderPort):
+    """Multi-class classification dataset from train.csv/test.csv (Kaggle/Zindi style).
+
+    - Handles mixed numeric + categorical columns.
+    - One-hot encodes categoricals using vocab built from (train + test) for stability.
+    - Standardizes numeric columns using train statistics.
+
+    Supports string targets by mapping to integer class ids.
+
+    Splits:
+      - "train": training subset
+      - "test": validation subset (labels present)
+
+    Inference:
+      - call `get_inference()` to get (ids_test, X_test) for submission.
+    """
+
+    def __init__(
+        self,
+        *,
+        train_csv_path: str,
+        test_csv_path: str,
+        valid_fraction: float = 0.2,
+        seed: int = 0,
+        max_train_rows: int | None = None,
+        max_test_rows: int | None = None,
+        config: TabularCsvConfig | None = None,
+        add_noise: bool = False,
+        noise_std: float = 0.1,
+        class_names: tuple[str, ...] | None = None,
+    ) -> None:
+        self._cfg = config or TabularCsvConfig(enable_feature_engineering=False)
+        self._add_noise = bool(add_noise)
+        self._noise_std = float(noise_std)
+        self._numeric_dim = 0
+
+        train_rows = _read_csv_rows(train_csv_path)
+        test_rows = _read_csv_rows(test_csv_path)
+
+        if self._cfg.enable_feature_engineering:
+            _apply_feature_engineering(train_rows, cfg=self._cfg)
+            _apply_feature_engineering(test_rows, cfg=self._cfg)
+
+        if max_train_rows is not None:
+            train_rows = train_rows[: max_train_rows]
+        if max_test_rows is not None:
+            test_rows = test_rows[: max_test_rows]
+
+        if not train_rows:
+            raise ValueError(f"No rows found in {train_csv_path}")
+        if not test_rows:
+            raise ValueError(f"No rows found in {test_csv_path}")
+
+        all_cols = list(train_rows[0].keys())
+        if self._cfg.id_column not in all_cols:
+            raise ValueError(f"Missing id column '{self._cfg.id_column}'")
+        if self._cfg.target_column not in all_cols:
+            raise ValueError(f"Missing target column '{self._cfg.target_column}'")
+
+        feature_cols = [c for c in all_cols if c not in (self._cfg.id_column, self._cfg.target_column)]
+
+        # Infer numeric vs categorical based on train rows
+        numeric_cols: list[str] = []
+        categorical_cols: list[str] = []
+        for c in feature_cols:
+            values = [r.get(c, "") for r in train_rows]
+            non_missing = [v for v in values if not _is_missing(v, cfg=self._cfg)]
+            if not non_missing:
+                categorical_cols.append(c)
+                continue
+
+            n_ok = sum(1 for v in non_missing if _can_float(v))
+            frac_ok = n_ok / max(1, len(non_missing))
+            if frac_ok >= self._cfg.numeric_min_fraction:
+                numeric_cols.append(c)
+            else:
+                categorical_cols.append(c)
+
+        # Build categorical vocab from train+test so unseen test categories don't break
+        cat_vocab: dict[str, dict[str, int]] = {}
+        for c in categorical_cols:
+            vals: list[str] = []
+            for r in train_rows:
+                v = r.get(c, "")
+                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+            for r in test_rows:
+                v = r.get(c, "")
+                vals.append(self._cfg.categorical_missing_token if _is_missing(v, cfg=self._cfg) else v)
+            uniq = sorted(set(vals))
+            cat_vocab[c] = {v: i for i, v in enumerate(uniq)}
+
+        # Compute numeric stats from train
+        num_means: dict[str, float] = {}
+        num_stds: dict[str, float] = {}
+        for c in numeric_cols:
+            arr = np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in train_rows], dtype=np.float32)
+            mu = float(np.nanmean(arr))
+            std = float(np.nanstd(arr))
+            if np.isnan(mu):
+                mu = 0.0
+            if np.isnan(std) or std == 0.0:
+                std = 1.0
+            num_means[c] = mu
+            num_stds[c] = std
+
+        self._schema: dict[str, Any] = {
+            "feature_cols": feature_cols,
+            "numeric_cols": numeric_cols,
+            "categorical_cols": categorical_cols,
+            "cat_vocab": cat_vocab,
+            "num_means": num_means,
+            "num_stds": num_stds,
+        }
+
+        self._numeric_dim = int(len(numeric_cols))
+
+        def encode_features(rows: list[dict[str, str]]) -> np.ndarray:
+            feats: list[np.ndarray] = []
+
+            if numeric_cols:
+                num = np.stack(
+                    [
+                        (
+                            np.nan_to_num(
+                                np.asarray([_to_float_or_nan(r.get(c, ""), cfg=self._cfg) for r in rows], dtype=np.float32),
+                                nan=num_means[c],
+                            )
+                            - num_means[c]
+                        )
+                        / num_stds[c]
+                        for c in numeric_cols
+                    ],
+                    axis=1,
+                )
+                feats.append(num)
+
+            for c in categorical_cols:
+                vocab = cat_vocab[c]
+                idx = np.asarray(
+                    [
+                        vocab[
+                            self._cfg.categorical_missing_token
+                            if _is_missing(r.get(c, ""), cfg=self._cfg)
+                            else r.get(c, "")
+                        ]
+                        for r in rows
+                    ],
+                    dtype=np.int32,
+                )
+                enc = (self._cfg.categorical_encoding or "onehot").strip().lower()
+                if enc == "index":
+                    feats.append(idx.reshape(-1, 1).astype(np.float32))
+                else:
+                    one_hot = np.zeros((len(rows), len(vocab)), dtype=np.float32)
+                    one_hot[np.arange(len(rows)), idx] = 1.0
+                    feats.append(one_hot)
+
+            if not feats:
+                raise ValueError("No features detected")
+            return np.concatenate(feats, axis=1).astype(np.float32)
+
+        # IDs (kept as strings to support non-numeric IDs like 'ID_XXXX')
+        ids_train = np.asarray([str(r[self._cfg.id_column]) for r in train_rows], dtype=object)
+
+        # Targets: build label mapping
+        y_raw = [str(r.get(self._cfg.target_column, "")).strip() for r in train_rows]
+        uniq_labels = sorted(set(y_raw))
+        if class_names is not None:
+            ordered = [c for c in class_names if c in uniq_labels]
+            missing = [c for c in uniq_labels if c not in ordered]
+            if missing:
+                ordered.extend(missing)
+            uniq_labels = ordered
+        else:
+            # Common Zindi convention for this competition
+            tri = {"Low", "Medium", "High"}
+            if set(uniq_labels) == tri:
+                uniq_labels = ["Low", "Medium", "High"]
+
+        label_to_int = {lab: i for i, lab in enumerate(uniq_labels)}
+        self._class_names = tuple(uniq_labels)
+        y_all = np.asarray([label_to_int[lab] for lab in y_raw], dtype=np.int32)
+
+        x_all = encode_features(train_rows)
+
+        train_idx, valid_idx = _stratified_split_multiclass(y=y_all, valid_fraction=valid_fraction, seed=seed)
+
+        self._x_train = x_all[train_idx]
+        self._y_train = y_all[train_idx]
+        self._x_valid = x_all[valid_idx]
+        self._y_valid = y_all[valid_idx]
+        self._ids_valid = ids_train[valid_idx]
+
+        self._ids_test = np.asarray([str(r[self._cfg.id_column]) for r in test_rows], dtype=object)
+        self._x_test = encode_features(test_rows)
+
+        self._info = DatasetInfo(
+            num_classes=int(len(self._class_names)),
+            input_shape=(int(self._x_train.shape[1]),),
+            train_size=int(self._x_train.shape[0]),
+            valid_size=int(self._x_valid.shape[0]),
+            test_size=int(self._x_test.shape[0]),
+        )
+
+    @property
+    def class_names(self) -> tuple[str, ...]:
+        return tuple(self._class_names)
+
+    @property
+    def numeric_dim(self) -> int:
+        return int(self._numeric_dim)
+
+    @property
+    def categorical_cols(self) -> tuple[str, ...]:
+        return tuple(self._schema.get("categorical_cols", []))
+
+    @property
+    def categorical_cardinalities(self) -> tuple[int, ...]:
+        cols = list(self._schema.get("categorical_cols", []))
+        vocab = self._schema.get("cat_vocab", {})
+        return tuple(int(len(vocab[c])) for c in cols)
+
+    def describe(self) -> dict[str, Any]:
+        ytr = np.asarray(self._y_train)
+        yva = np.asarray(self._y_valid)
+        cat_card = {c: int(len(self._schema["cat_vocab"][c])) for c in self._schema["categorical_cols"]}
+
+        def dist(y: np.ndarray) -> dict[str, int]:
+            out: dict[str, int] = {name: 0 for name in self._class_names}
+            if y.size:
+                vals, cnts = np.unique(y, return_counts=True)
+                for v, c in zip(vals.tolist(), cnts.tolist()):
+                    out[self._class_names[int(v)]] = int(c)
+            return out
+
+        return {
+            "train_size": int(self._info.train_size),
+            "valid_size": int(self._info.valid_size),
+            "test_size": int(self._info.test_size),
+            "n_features": int(self._info.input_shape[0]),
+            "n_numeric": int(len(self._schema["numeric_cols"])),
+            "n_categorical": int(len(self._schema["categorical_cols"])),
+            "categorical_cols": list(self._schema["categorical_cols"]),
+            "categorical_cardinalities": cat_card,
+            "categorical_encoding": str(self._cfg.categorical_encoding),
+            "class_names": list(self._class_names),
+            "label_dist_train": dist(ytr),
+            "label_dist_valid": dist(yva),
+        }
+
+    @property
+    def info(self) -> DatasetInfo:
+        return self._info
+
+    def iter_batches(
+        self,
+        *,
+        split: DatasetSplit,
+        batch_size: int,
+        shuffle: bool,
+        seed: int,
+    ):
+        if split == "train":
+            x, y = self._x_train, self._y_train
+        else:
+            x, y = self._x_valid, self._y_valid
+
+        n = len(x)
+        idx = np.arange(n)
+        if shuffle:
+            np.random.default_rng(seed).shuffle(idx)
+
+        for start in range(0, n, batch_size):
+            sel = idx[start : start + batch_size]
+            x_batch = x[sel]
+
+            if self._add_noise and split == "train" and self._numeric_dim > 0 and self._noise_std > 0.0:
+                rng = np.random.default_rng(seed + start)
+                noise = rng.normal(0.0, self._noise_std, (x_batch.shape[0], self._numeric_dim)).astype(x_batch.dtype)
+                x_batch = x_batch.copy()
+                x_batch[:, : self._numeric_dim] = x_batch[:, : self._numeric_dim] + noise
+
+            yield Batch(x=x_batch, y=y[sel])
+
+    def get_validation(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return self._ids_valid, self._x_valid, self._y_valid
+
+    def get_inference(self) -> tuple[np.ndarray, np.ndarray]:
         return self._ids_test, self._x_test
