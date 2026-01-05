@@ -55,6 +55,64 @@ from jax_deep_learning.core.use_cases.train_classifier import TrainClassifierUse
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
+def _confusion_matrix_counts(*, y_true: np.ndarray, y_pred: np.ndarray, n_classes: int) -> np.ndarray:
+    """Return integer confusion matrix of shape (C, C) for labels in [0, C).
+
+    Rows are true labels, columns are predicted labels.
+    """
+
+    yt = np.asarray(y_true, dtype=np.int32).reshape(-1)
+    yp = np.asarray(y_pred, dtype=np.int32).reshape(-1)
+    if yt.shape[0] != yp.shape[0]:
+        raise ValueError(f"y_true and y_pred must have same length, got {yt.shape[0]} vs {yp.shape[0]}")
+    if n_classes <= 0:
+        raise ValueError(f"n_classes must be > 0, got {n_classes}")
+
+    cm = np.zeros((n_classes, n_classes), dtype=np.int64)
+    # Only count valid labels (guards against accidental -1 or out-of-range values).
+    mask = (yt >= 0) & (yt < n_classes) & (yp >= 0) & (yp < n_classes)
+    if np.any(mask):
+        np.add.at(cm, (yt[mask], yp[mask]), 1)
+    return cm
+
+
+def _print_confusion_matrix(*, cm: np.ndarray, class_names: tuple[str, ...]) -> None:
+    """Pretty-print confusion matrix to stdout.
+
+    Shows both counts and row-normalized percentages.
+    """
+
+    cm = np.asarray(cm)
+    n = int(cm.shape[0])
+    if cm.shape != (n, n):
+        raise ValueError(f"cm must be square, got shape={cm.shape}")
+    if len(class_names) != n:
+        raise ValueError(f"class_names length must match cm size, got {len(class_names)} vs {n}")
+
+    name_w = max(4, max(len(str(x)) for x in class_names))
+    cell_w = max(7, max(len(str(int(x))) for x in cm.reshape(-1).tolist()) + 1)
+
+    typer.echo("Confusion matrix (rows=true, cols=pred):")
+    header = " " * (name_w + 2) + " ".join(f"{name:>{cell_w}}" for name in class_names)
+    typer.echo(header)
+    for i, name in enumerate(class_names):
+        row = cm[i, :]
+        row_str = " ".join(f"{int(v):>{cell_w}d}" for v in row.tolist())
+        typer.echo(f"{name:>{name_w}} | {row_str}")
+
+    typer.echo("Row-normalized (%):")
+    typer.echo(header)
+    for i, name in enumerate(class_names):
+        row = cm[i, :].astype(np.float64)
+        denom = float(row.sum())
+        if denom <= 0:
+            pct = np.zeros_like(row)
+        else:
+            pct = 100.0 * (row / denom)
+        row_str = " ".join(f"{p:>{cell_w}.1f}" for p in pct.tolist())
+        typer.echo(f"{name:>{name_w}} | {row_str}")
+
+
 @app.command()
 def train(
     dataset_kind: str = typer.Option("tfds", help="Dataset adapter to use: tfds | npz"),
@@ -482,6 +540,11 @@ def zindi_financial_health(
     zip_output: bool = typer.Option(
         False, "--zip/--no-zip", help="If set, zip the output submission file"
     ),
+    confusion_matrix: bool = typer.Option(
+        True,
+        "--confusion-matrix/--no-confusion-matrix",
+        help="Print a confusion matrix for the validation split",
+    ),
 ) -> None:
     """Train and generate a Zindi submission for the data.org Financial Health challenge.
 
@@ -613,6 +676,14 @@ def zindi_financial_health(
     )
     acc = float(np.mean(y_hat_valid == np.asarray(y_valid, dtype=np.int32)))
     typer.echo(f"Validation accuracy: {acc:.5f} (valid n={len(y_valid)})")
+
+    if confusion_matrix:
+        cm = _confusion_matrix_counts(
+            y_true=np.asarray(y_valid, dtype=np.int32),
+            y_pred=np.asarray(y_hat_valid, dtype=np.int32),
+            n_classes=dataset.info.num_classes,
+        )
+        _print_confusion_matrix(cm=cm, class_names=dataset.class_names)
 
     global_step = int(result.history[-1].get("global_step", 0)) if result.history else 0
     metrics.log(
