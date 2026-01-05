@@ -10,9 +10,11 @@ import optax
 
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.base import Batch, StepMetrics
-from jax_deep_learning.core.domain.entities.model import (ClassifierFns,
-                                                          MlpClassifierFns,
-                                                          Params)
+from jax_deep_learning.core.domain.entities.model import (
+    ClassifierFns,
+    MlpClassifierFns,
+    Params,
+)
 from jax_deep_learning.core.domain.errors.training import TrainingError
 from jax_deep_learning.core.domain.utils.metrics import roc_auc_score_binary
 from jax_deep_learning.core.ports.checkpoint_store import CheckpointStorePort

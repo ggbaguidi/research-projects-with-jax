@@ -25,7 +25,9 @@ warnings.filterwarnings(
 )
 
 from jax_deep_learning.adapters.left.inject_config import configure_injections
-from jax_deep_learning.adapters.right.checkpoints_filesystem import FilesystemCheckpointStore
+from jax_deep_learning.adapters.right.checkpoints_filesystem import (
+    FilesystemCheckpointStore,
+)
 from jax_deep_learning.adapters.right.data_loaders import (
     NpzClassificationDatasetProvider,
     TabularCsvBinaryClassificationDatasetProvider,
@@ -33,7 +35,10 @@ from jax_deep_learning.adapters.right.data_loaders import (
     TabularCsvMulticlassClassificationDatasetProvider,
     TfdsClassificationDatasetProvider,
 )
-from jax_deep_learning.adapters.right.metrics_jsonl import CompositeMetricsSink, JsonlFileMetricsSink
+from jax_deep_learning.adapters.right.metrics_jsonl import (
+    CompositeMetricsSink,
+    JsonlFileMetricsSink,
+)
 from jax_deep_learning.adapters.right.metrics_stdout import StdoutMetricsSink
 from jax_deep_learning.core.domain.commands.train import TrainCommand
 from jax_deep_learning.core.domain.entities.model import (
